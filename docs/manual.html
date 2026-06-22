@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Video Frame Studio · 使用说明书</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0e1014;
+    color: #e6e8ea;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Roboto, sans-serif;
+    font-size: 14px;
+  }
+  body {
+    width: 1600px;
+    padding: 36px 40px 40px;
+  }
+
+  /* ---------- header ---------- */
+  .header {
+    display: flex; align-items: center; gap: 16px;
+    padding-bottom: 20px; border-bottom: 2px solid #1f2229;
+    margin-bottom: 24px;
+  }
+  .logo {
+    width: 56px; height: 56px; border-radius: 12px;
+    background: linear-gradient(135deg, #6c5ce7, #00cec9);
+    color: white; font-weight: 800; font-size: 18px; letter-spacing: 1px;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
+  }
+  .h-title { flex: 1; }
+  .h-title h1 { font-size: 28px; font-weight: 700; letter-spacing: 0.3px; }
+  .h-title .subtitle { font-size: 13px; color: #aab0bb; margin-top: 4px; }
+  .h-meta { text-align: right; font-size: 11px; color: #7a8190; line-height: 1.6; }
+  .h-meta b { color: #b3aaff; font-weight: 600; }
+
+  /* ---------- main grid ---------- */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1.45fr 1fr;
+    gap: 28px;
+    margin-bottom: 28px;
+  }
+
+  /* ---------- mockup ---------- */
+  .mockup-wrap { position: relative; }
+  .mockup {
+    position: relative;
+    width: 100%; height: 620px;
+    background: #14161a;
+    border: 1px solid #2a2e36;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+
+  /* topbar */
+  .m-topbar {
+    height: 50px;
+    background: rgba(20, 22, 26, 0.95);
+    border-bottom: 1px solid #1f2229;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+  }
+  .m-brand { display: flex; align-items: center; gap: 10px; }
+  .m-logo {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: linear-gradient(135deg, #6c5ce7, #00cec9);
+    color: white; font-weight: 800; font-size: 10px;
+    display: grid; place-items: center;
+  }
+  .m-brand-text { font-size: 13px; font-weight: 600; }
+  .m-topbar-right { display: flex; align-items: center; gap: 8px; }
+  .m-icon-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    background: transparent; color: #aab0bb;
+    display: grid; place-items: center; font-size: 13px;
+  }
+  .m-lang {
+    height: 26px; padding: 0 10px;
+    border-radius: 5px; font-size: 11px;
+    background: transparent; color: #aab0bb;
+  }
+  .m-btn {
+    padding: 6px 14px; border-radius: 6px; font-size: 11px;
+    background: linear-gradient(135deg, #6c5ce7, #4834d4);
+    color: white; font-weight: 500;
+  }
+
+  /* layout */
+  .m-layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    height: calc(100% - 50px);
+    background: #1f2229;
+    gap: 1px;
+  }
+
+  /* player pane */
+  .m-player { background: #0e1014; display: flex; flex-direction: column; }
+  .m-stage {
+    flex: 1; background: #000;
+    position: relative;
+    display: grid; place-items: center;
+    overflow: hidden;
+  }
+  .m-stage::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 30% 40%, rgba(108, 92, 231, 0.25), transparent 60%),
+      radial-gradient(ellipse at 70% 60%, rgba(0, 206, 201, 0.18), transparent 60%),
+      linear-gradient(135deg, #1a1d23, #0e1014);
+  }
+  .m-stage-title {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 10px 14px;
+    font-size: 11px; color: rgba(255,255,255,0.85);
+    background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+    z-index: 2;
+  }
+  .m-play-overlay {
+    position: relative; z-index: 2;
+    width: 70px; height: 70px; border-radius: 50%;
+    background: rgba(20, 22, 26, 0.6);
+    backdrop-filter: blur(6px);
+    display: grid; place-items: center;
+    color: white;
+  }
+  .m-play-overlay svg { margin-left: 4px; }
+
+  /* transport */
+  .m-transport {
+    background: #14161a;
+    border-top: 1px solid #1f2229;
+    padding: 6px 14px 8px;
+  }
+  .m-timeline-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0;
+  }
+  .m-time { font-size: 10px; color: #aab0bb; min-width: 50px; text-align: center; font-variant-numeric: tabular-nums; }
+  .m-timeline {
+    flex: 1; position: relative; height: 18px;
+  }
+  .m-tl-track {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    left: 0; right: 0; height: 5px; border-radius: 3px;
+    background: rgba(255,255,255,0.1);
+  }
+  .m-tl-buf {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    left: 0; height: 5px; border-radius: 3px;
+    background: rgba(255,255,255,0.18);
+    width: 65%;
+  }
+  .m-tl-loop {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    left: 22%; width: 28%;
+    height: 5px; border-radius: 3px;
+    background: rgba(255, 200, 0, 0.45);
+  }
+  .m-tl-prog {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    left: 0; width: 38%;
+    height: 5px; border-radius: 3px;
+    background: linear-gradient(to right, #6c5ce7, #00cec9);
+  }
+  .m-tl-mark {
+    position: absolute; top: 0; bottom: 0; width: 2px; background: gold;
+  }
+  .m-tl-mark::after {
+    position: absolute; top: -3px; left: 50%; transform: translateX(-50%);
+    background: gold; color: #1b1d22;
+    font-size: 8px; font-weight: 800; padding: 1px 3px; border-radius: 2px;
+  }
+  .m-tl-mark.a::after { content: 'A'; }
+  .m-tl-mark.b::after { content: 'B'; }
+  .m-tl-thumb {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    left: 38%;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: white; box-shadow: 0 0 0 2px #6c5ce7;
+  }
+
+  .m-transport-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 0;
+  }
+  .m-tr-group { display: flex; align-items: center; gap: 3px; }
+  .m-tr-sep { width: 1px; height: 18px; background: #1f2229; margin: 0 4px; }
+  .m-tr-spacer { flex: 1; }
+  .m-tr-btn {
+    width: 28px; height: 26px; border-radius: 5px;
+    background: transparent; color: #e6e8ea;
+    display: grid; place-items: center;
+    font-size: 9px; font-weight: 600;
+  }
+  .m-tr-btn.pp {
+    width: 36px; height: 32px;
+    background: linear-gradient(135deg, #6c5ce7, #4834d4);
+    color: white;
+  }
+  .m-tr-btn.small { width: 24px; height: 22px; font-size: 9px; }
+  .m-tr-btn.gold { background: rgba(255, 200, 0, 0.2); color: gold; border: 1px solid gold; }
+  .m-speed {
+    padding: 4px 8px; font-size: 10px; border-radius: 4px;
+    background: #2a2e36; border: 1px solid #3a3f49; color: #e6e8ea;
+  }
+  .m-vol-bar {
+    width: 60px; height: 4px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+    position: relative;
+  }
+  .m-vol-bar::after {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 70%;
+    background: white; border-radius: 2px;
+  }
+  .m-frame-info { font-size: 10px; color: #aab0bb; font-variant-numeric: tabular-nums; }
+
+  /* filters pane */
+  .m-filters {
+    background: #14161a;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .m-hero {
+    padding: 10px 12px 9px;
+    background: linear-gradient(180deg, #1a1d23 0%, #15171c 100%);
+    border-bottom: 1px solid #1f2229;
+  }
+  .m-hero-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .m-hero-thumb {
+    width: 44px; height: 28px; border-radius: 4px;
+    border: 1px solid #2a2e36;
+    background: linear-gradient(135deg, #6c5ce7, #00cec9);
+  }
+  .m-hero-text { flex: 1; min-width: 0; }
+  .m-hero-name { font-size: 12px; font-weight: 600; }
+  .m-hero-desc { font-size: 10px; color: #7a8190; margin-top: 1px; }
+  .m-hero-reset { width: 24px; height: 24px; border-radius: 5px; color: #7a8190; display: grid; place-items: center; }
+  .m-hero-strength { display: flex; align-items: center; gap: 8px; }
+  .m-hero-bar {
+    flex: 1; height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, #6c5ce7 75%, rgba(255,255,255,0.12) 75%);
+    position: relative;
+  }
+  .m-hero-bar::after {
+    content: ''; position: absolute; top: 50%; transform: translate(-50%, -50%);
+    left: 75%;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: white; box-shadow: 0 0 0 2px #6c5ce7;
+  }
+  .m-hero-pct { font-size: 10px; color: #aab0bb; min-width: 28px; text-align: right; }
+
+  .m-search-row {
+    padding: 7px 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .m-search {
+    flex: 1; height: 24px; padding: 0 10px 0 22px;
+    background: #1a1d23; border: 1px solid #2a2e36; border-radius: 5px;
+    font-size: 10px; color: #7a8190;
+    position: relative;
+    line-height: 22px;
+  }
+  .m-search::before {
+    content: '🔍'; position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+    font-size: 9px;
+  }
+  .m-cats {
+    display: flex; gap: 3px;
+    padding: 2px 10px 7px;
+    flex-wrap: wrap;
+  }
+  .m-cat {
+    padding: 3px 8px; border-radius: 11px;
+    background: transparent; border: 1px solid #2a2e36;
+    color: #aab0bb; font-size: 9px;
+  }
+  .m-cat.active {
+    background: linear-gradient(135deg, #6c5ce7, #4834d4);
+    border-color: transparent; color: white;
+  }
+  .m-grid {
+    flex: 1; padding: 0 10px 8px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    overflow: hidden;
+  }
+  .m-tile {
+    aspect-ratio: 1 / 1;
+    background: #1a1d23;
+    border: 2px solid transparent;
+    border-radius: 5px;
+    position: relative;
+    overflow: hidden;
+  }
+  .m-tile.t-1 { background: linear-gradient(135deg, #c69, #ee9ca7); }
+  .m-tile.t-2 { background: linear-gradient(135deg, #4a4a4a, #888); }
+  .m-tile.t-3 { background: linear-gradient(135deg, #d4a017, #8b4513); }
+  .m-tile.t-4 { background: linear-gradient(135deg, #2a2e36, #4a505b); }
+  .m-tile.t-5 { background: linear-gradient(135deg, #00cec9, #6c5ce7); }
+  .m-tile.t-6 { background: linear-gradient(135deg, #fd79a8, #fdcb6e); }
+  .m-tile.t-7 { background: linear-gradient(135deg, #1e3c72, #2a5298); }
+  .m-tile.t-8 { background: linear-gradient(135deg, #614385, #516395); }
+  .m-tile.t-9 { background: linear-gradient(135deg, #ff6b6b, #4ecdc4); }
+  .m-tile.active {
+    border-color: #6c5ce7;
+    box-shadow: 0 0 0 1px #6c5ce7, 0 4px 10px rgba(108, 92, 231, 0.3);
+  }
+  .m-tile-name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 1px 4px;
+    font-size: 8px; color: white; font-weight: 600;
+    background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  }
+  .m-tile-key {
+    position: absolute; top: 2px; right: 2px;
+    background: rgba(20, 22, 26, 0.85);
+    color: #b3aaff;
+    border-radius: 2px;
+    font-size: 7px; padding: 0 3px;
+    font-weight: 700;
+  }
+  .m-tile-live {
+    position: absolute; top: 2px; left: 2px;
+    background: rgba(108, 92, 231, 0.85);
+    color: white;
+    border-radius: 2px;
+    font-size: 6px; padding: 1px 3px;
+    font-weight: 700; text-transform: uppercase;
+  }
+
+  .m-footer {
+    display: flex; gap: 6px;
+    padding: 8px 10px;
+    background: #1a1d23;
+    border-top: 1px solid #1f2229;
+  }
+  .m-footer-main {
+    flex: 1;
+    height: 28px;
+    background: linear-gradient(135deg, #6c5ce7, #4834d4);
+    color: white; font-size: 10px; font-weight: 500;
+    border-radius: 5px;
+    display: grid; place-items: center;
+  }
+  .m-footer-icon {
+    width: 28px; height: 28px;
+    background: #2a2e36; border: 1px solid #3a3f49;
+    border-radius: 5px;
+    display: grid; place-items: center;
+    color: #e6e8ea; font-size: 12px;
+  }
+
+  /* annotation labels overlay */
+  .annot {
+    position: absolute;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color: white;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 800;
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+    z-index: 10;
+    border: 2px solid white;
+  }
+
+  /* ---------- legend ---------- */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 20px;
+    align-content: start;
+  }
+  .legend-item {
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .legend-num {
+    flex-shrink: 0;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff6b6b, #ee5a6f);
+    color: white;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 800;
+    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.3);
+  }
+  .legend-body { flex: 1; min-width: 0; }
+  .legend-title {
+    font-size: 13px; font-weight: 600; color: #e6e8ea;
+    margin-bottom: 3px;
+  }
+  .legend-desc {
+    font-size: 11px; color: #aab0bb; line-height: 1.55;
+  }
+
+  /* ---------- bottom rows ---------- */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .feat-card {
+    padding: 14px 16px;
+    background: #14161a;
+    border: 1px solid #1f2229;
+    border-radius: 10px;
+  }
+  .feat-card h3 {
+    font-size: 13px; font-weight: 700;
+    margin-bottom: 10px;
+    color: #b3aaff;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .feat-card ul { list-style: none; }
+  .feat-card li {
+    font-size: 11px; color: #aab0bb;
+    line-height: 1.7;
+    padding-left: 12px; position: relative;
+  }
+  .feat-card li::before {
+    content: '·'; position: absolute; left: 0; top: 0;
+    color: #6c5ce7; font-weight: 700;
+  }
+  .feat-card li b { color: #e6e8ea; }
+
+  /* keyboard reference */
+  .kb-section {
+    background: #14161a;
+    border: 1px solid #1f2229;
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .kb-section h3 {
+    font-size: 13px; font-weight: 700;
+    margin-bottom: 12px;
+    color: #b3aaff;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .kb-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px 24px;
+  }
+  .kb-col h4 {
+    font-size: 10px; font-weight: 700;
+    color: #7a8190;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .kb-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+  .kb-keys {
+    display: flex; gap: 3px;
+    flex-wrap: nowrap;
+  }
+  .kbd {
+    display: inline-block;
+    padding: 2px 6px; min-width: 18px;
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 10px; font-weight: 600;
+    background: #2a2e36; border: 1px solid #3a3f49;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    color: #e6e8ea;
+  }
+  .kb-desc { color: #aab0bb; font-size: 10px; flex: 1; }
+
+  /* ---------- filter category pills ---------- */
+  .cats-section {
+    margin-top: 22px;
+    background: #14161a;
+    border: 1px solid #1f2229;
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .cats-section h3 {
+    font-size: 13px; font-weight: 700;
+    margin-bottom: 14px;
+    color: #b3aaff;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .cats-list {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 10px;
+  }
+  .cat-pill {
+    background: #1a1d23;
+    border: 1px solid #2a2e36;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .cat-pill-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px;
+  }
+  .cat-pill-name {
+    font-size: 12px; font-weight: 600; color: #e6e8ea;
+  }
+  .cat-pill-count {
+    font-size: 10px; color: #6c5ce7; font-weight: 700;
+    background: rgba(108, 92, 231, 0.15);
+    padding: 2px 6px; border-radius: 8px;
+  }
+  .cat-pill-list {
+    font-size: 10px; color: #7a8190;
+    line-height: 1.6;
+  }
+
+  /* footer */
+  .doc-footer {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid #1f2229;
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #5e6473;
+  }
+  .doc-footer b { color: #b3aaff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">VFS</div>
+  <div class="h-title">
+    <h1>Video Frame Studio · 使用说明书</h1>
+    <div class="subtitle">基于 Electron 的视频帧提取与滤镜处理工具 — 界面布局与功能速查</div>
+  </div>
+  <div class="h-meta">
+    <b>v1.0</b> · 33 滤镜 · 12 语言<br/>
+    单页式三段布局 · 全键盘快捷键
+  </div>
+</div>
+
+<div class="main-grid">
+
+  <!-- ============= MOCKUP ============= -->
+  <div class="mockup-wrap">
+    <div class="mockup">
+
+      <!-- Topbar -->
+      <div class="m-topbar">
+        <div class="m-brand">
+          <div class="m-logo">VFS</div>
+          <div class="m-brand-text">Video Frame Studio</div>
+        </div>
+        <div class="m-topbar-right">
+          <div class="m-icon-btn">?</div>
+          <div class="m-icon-btn">⚙</div>
+          <div class="m-lang">简体中文 ▾</div>
+          <div class="m-btn">打开视频…</div>
+        </div>
+      </div>
+
+      <!-- Layout -->
+      <div class="m-layout">
+
+        <!-- Player pane -->
+        <div class="m-player">
+          <div class="m-stage">
+            <div class="m-stage-title">📁 sample_video.mp4</div>
+            <div class="m-play-overlay">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="white"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          </div>
+
+          <div class="m-transport">
+            <!-- Timeline row -->
+            <div class="m-timeline-row">
+              <div class="m-time">0:07.42</div>
+              <div class="m-timeline">
+                <div class="m-tl-track"></div>
+                <div class="m-tl-buf"></div>
+                <div class="m-tl-loop"></div>
+                <div class="m-tl-prog"></div>
+                <div class="m-tl-mark a" style="left:22%"></div>
+                <div class="m-tl-mark b" style="left:50%"></div>
+                <div class="m-tl-thumb"></div>
+              </div>
+              <div class="m-time">0:19.38</div>
+            </div>
+
+            <!-- Transport row -->
+            <div class="m-transport-row">
+              <div class="m-tr-group">
+                <div class="m-tr-btn">⏮</div>
+                <div class="m-tr-btn">⏪</div>
+                <div class="m-tr-btn pp">▶</div>
+                <div class="m-tr-btn">⏩</div>
+                <div class="m-tr-btn">⏭</div>
+              </div>
+              <div class="m-tr-sep"></div>
+              <div class="m-tr-group">
+                <div class="m-tr-btn small gold">A</div>
+                <div class="m-tr-btn small gold">B</div>
+                <div class="m-tr-btn small">🔁</div>
+                <div class="m-tr-btn small">×</div>
+              </div>
+              <div class="m-tr-sep"></div>
+              <div class="m-speed">1× ▾</div>
+              <div class="m-tr-spacer"></div>
+              <div class="m-frame-info">445f / 1163f</div>
+              <div class="m-tr-sep"></div>
+              <div class="m-tr-group">
+                <div class="m-tr-btn small">🔊</div>
+                <div class="m-vol-bar"></div>
+              </div>
+              <div class="m-tr-btn small">⛶</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filters pane -->
+        <div class="m-filters">
+          <div class="m-hero">
+            <div class="m-hero-row">
+              <div class="m-hero-thumb"></div>
+              <div class="m-hero-text">
+                <div class="m-hero-name">赛博朋克</div>
+                <div class="m-hero-desc">霓虹品红/青色调色</div>
+              </div>
+              <div class="m-hero-reset">↺</div>
+            </div>
+            <div class="m-hero-strength">
+              <div class="m-hero-bar"></div>
+              <div class="m-hero-pct">75%</div>
+            </div>
+          </div>
+
+          <div class="m-search-row">
+            <div class="m-search">搜索滤镜…</div>
+          </div>
+
+          <div class="m-cats">
+            <div class="m-cat active">全部 33</div>
+            <div class="m-cat">基础 1</div>
+            <div class="m-cat">色彩 9</div>
+            <div class="m-cat">黑白 3</div>
+            <div class="m-cat">风格化</div>
+            <div class="m-cat">模糊</div>
+            <div class="m-cat">氛围</div>
+          </div>
+
+          <div class="m-grid">
+            <div class="m-tile t-4"><span class="m-tile-name">原图</span></div>
+            <div class="m-tile t-2"><span class="m-tile-name">灰度</span><span class="m-tile-key">1</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-3"><span class="m-tile-name">怀旧</span><span class="m-tile-key">2</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-1"><span class="m-tile-name">反相</span><span class="m-tile-key">3</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-6"><span class="m-tile-name">提亮</span><span class="m-tile-key">4</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-7"><span class="m-tile-name">压暗</span><span class="m-tile-key">5</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-9"><span class="m-tile-name">对比度</span><span class="m-tile-key">6</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-5"><span class="m-tile-name">饱和</span><span class="m-tile-key">7</span><span class="m-tile-live">LIVE</span></div>
+            <div class="m-tile t-8 active"><span class="m-tile-name">赛博朋克</span><span class="m-tile-key">8</span></div>
+            <div class="m-tile t-1"><span class="m-tile-name">复古</span><span class="m-tile-key">9</span></div>
+            <div class="m-tile t-7"><span class="m-tile-name">夜视</span></div>
+            <div class="m-tile t-2"><span class="m-tile-name">边缘</span></div>
+          </div>
+
+          <div class="m-footer">
+            <div class="m-footer-main">导出滤镜效果 (PNG)</div>
+            <div class="m-footer-icon">⬇</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- numbered annotations overlaid on the mockup -->
+    <div class="annot" style="left:-10px; top:30px;">1</div>
+    <div class="annot" style="left:520px; top:30px;">2</div>
+    <div class="annot" style="left:-10px; top:120px;">3</div>
+    <div class="annot" style="left:-10px; top:445px;">4</div>
+    <div class="annot" style="left:-10px; top:530px;">5</div>
+    <div class="annot" style="right:-10px; top:80px;">6</div>
+    <div class="annot" style="right:-10px; top:200px;">7</div>
+    <div class="annot" style="right:-10px; top:340px;">8</div>
+    <div class="annot" style="right:-10px; top:570px;">9</div>
+  </div>
+
+  <!-- ============= LEGEND ============= -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-num">1</div>
+      <div class="legend-body">
+        <div class="legend-title">品牌区</div>
+        <div class="legend-desc">应用图标和名称，标识当前所在工具</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">2</div>
+      <div class="legend-body">
+        <div class="legend-title">顶栏操作</div>
+        <div class="legend-desc">帮助 ?、设置 ⚙（提取参数）、语言切换、打开视频</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">3</div>
+      <div class="legend-body">
+        <div class="legend-title">视频舞台</div>
+        <div class="legend-desc">大画面播放区，文件名悬停显示，暂停时中央现 ▶ 大按钮</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">4</div>
+      <div class="legend-body">
+        <div class="legend-title">时间轴</div>
+        <div class="legend-desc">紫青渐变进度，金色 A-B 循环段，hover 浮出时间气泡</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">5</div>
+      <div class="legend-body">
+        <div class="legend-title">传输栏</div>
+        <div class="legend-desc">播放/逐帧/A-B 循环/速度/音量/全屏 — 分组带分隔线</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">6</div>
+      <div class="legend-body">
+        <div class="legend-title">滤镜 Hero 卡片</div>
+        <div class="legend-desc">置顶显示当前滤镜缩略图、名称、强度滑条 + 重置</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">7</div>
+      <div class="legend-body">
+        <div class="legend-title">分类 Tab</div>
+        <div class="legend-desc">7 大类切换 + 关键字搜索，求交集过滤</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">8</div>
+      <div class="legend-body">
+        <div class="legend-title">滤镜瓷砖网格</div>
+        <div class="legend-desc">3 列正方形预览，LIVE 徽章、数字键、紫色高亮选中</div>
+      </div>
+    </div>
+    <div class="legend-item">
+      <div class="legend-num">9</div>
+      <div class="legend-body">
+        <div class="legend-title">导出栏</div>
+        <div class="legend-desc">主操作"导出滤镜 PNG"占主位 + 图标按钮"导出原始帧"</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============= FEATURES ============= -->
+<div class="features-grid">
+  <div class="feat-card">
+    <h3>🎬 播放功能</h3>
+    <ul>
+      <li><b>播放控制</b>：播放/暂停、首末帧跳转、逐帧步进</li>
+      <li><b>速度调节</b>：0.25× / 0.5× / 0.75× / 1× / 1.25× / 1.5× / 2× / 4×</li>
+      <li><b>A-B 循环</b>：标记起止点，自动循环播放区间</li>
+      <li><b>音量控制</b>：滑条调节 + 静音切换</li>
+      <li><b>全屏模式</b>：F 键或按钮一键进入</li>
+      <li><b>拖拽打开</b>：直接把视频拖到窗口</li>
+    </ul>
+  </div>
+  <div class="feat-card">
+    <h3>🎨 滤镜系统</h3>
+    <ul>
+      <li><b>33 个滤镜</b>，分 7 类：基础/色彩/黑白/风格化/模糊锐化/失真/氛围</li>
+      <li><b>双轨渲染</b>：15 个 LIVE 滤镜播放中实时显示，18 个像素级滤镜暂停后应用</li>
+      <li><b>强度滑条</b>：0–100% 平滑混合，所见即所得</li>
+      <li><b>瓷砖预览</b>：每个滤镜显示当前画面的预览效果</li>
+      <li><b>导出帧</b>：PNG 滤镜效果或原始帧 JPG</li>
+    </ul>
+  </div>
+  <div class="feat-card">
+    <h3>🌍 其它</h3>
+    <ul>
+      <li><b>12 种语言</b>：中（简/繁）/英/日/韩/西/法/德/俄/葡/意/阿</li>
+      <li><b>RTL 支持</b>：阿拉伯语自动镜像布局</li>
+      <li><b>帧提取</b>：FFmpeg 高质量 JPEG，可设采样率/上限</li>
+      <li><b>胶片条</b>：提取后底部窗口化缩略图导航</li>
+      <li><b>键盘速查</b>：按 ? 调出快捷键全表</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============= KEYBOARD ============= -->
+<div class="kb-section">
+  <h3>⌨ 键盘快捷键</h3>
+  <div class="kb-grid">
+    <div class="kb-col">
+      <h4>播放</h4>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">Space</span><span class="kbd">K</span></div><div class="kb-desc">播放 / 暂停</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">J</span><span class="kbd">L</span></div><div class="kb-desc">后退 / 前进 10s</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">←</span><span class="kbd">→</span></div><div class="kb-desc">逐帧（暂停）/ ±5s（播放）</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">Shift</span><span class="kbd">←</span></div><div class="kb-desc">跳转 ±10s</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">,</span><span class="kbd">.</span></div><div class="kb-desc">逐帧 ±1</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">Home</span><span class="kbd">End</span></div><div class="kb-desc">首帧 / 末帧</div></div>
+    </div>
+    <div class="kb-col">
+      <h4>A-B 循环</h4>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">I</span></div><div class="kb-desc">设循环起点 A</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">O</span></div><div class="kb-desc">设循环终点 B</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">L</span></div><div class="kb-desc">开关 A-B 循环</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">\</span></div><div class="kb-desc">清除循环</div></div>
+    </div>
+    <div class="kb-col">
+      <h4>音视图</h4>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">↑</span><span class="kbd">↓</span></div><div class="kb-desc">音量 ±5%</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">M</span></div><div class="kb-desc">静音</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">F</span></div><div class="kb-desc">全屏</div></div>
+    </div>
+    <div class="kb-col">
+      <h4>滤镜与帮助</h4>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">1</span>—<span class="kbd">9</span></div><div class="kb-desc">应用滤镜 1-9</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">Space</span></div><div class="kb-desc">无视频时 = 重置滤镜</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">/</span></div><div class="kb-desc">聚焦滤镜搜索</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">?</span></div><div class="kb-desc">显示快捷键速查</div></div>
+      <div class="kb-row"><div class="kb-keys"><span class="kbd">Esc</span></div><div class="kb-desc">关闭弹出层</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============= CATEGORIES ============= -->
+<div class="cats-section">
+  <h3>🎨 滤镜分类一览</h3>
+  <div class="cats-list">
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">基础</span><span class="cat-pill-count">1</span></div>
+      <div class="cat-pill-list">原图</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">色彩</span><span class="cat-pill-count">9</span></div>
+      <div class="cat-pill-list">提亮 · 压暗 · 对比度 · 饱和 · 去饱和 · 色相偏移 · 暖色 · 冷色 · 怀旧</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">黑白</span><span class="cat-pill-count">3</span></div>
+      <div class="cat-pill-list">灰度 · 高反差黑白 · 阈值</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">风格化</span><span class="cat-pill-count">7</span></div>
+      <div class="cat-pill-list">反相 · 色阶分离 · 过曝 · 边缘检测 · 浮雕 · 双色调 · 漫画</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">模糊锐化</span><span class="cat-pill-count">3</span></div>
+      <div class="cat-pill-list">盒式模糊 · 高斯模糊 · 锐化</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">失真</span><span class="cat-pill-count">3</span></div>
+      <div class="cat-pill-list">像素化 · RGB 偏移 · 水平镜像</div>
+    </div>
+    <div class="cat-pill">
+      <div class="cat-pill-head"><span class="cat-pill-name">氛围</span><span class="cat-pill-count">7</span></div>
+      <div class="cat-pill-list">暗角 · 噪点 · 扫描线 · 复古胶片 · 赛博朋克 · 宝丽来 · 热力图 · 夜视</div>
+    </div>
+  </div>
+</div>
+
+<div class="doc-footer">
+  <div>Video Frame Studio · 基于 <b>Electron</b> + <b>FFmpeg</b> 构建</div>
+  <div>说明书生成自 <b>2026-06-19</b></div>
+</div>
+
+</body>
+</html>

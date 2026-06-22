@@ -1,0 +1,20 @@
+{
+  "name": "video-frame-studio",
+  "version": "1.0.0",
+  "description": "Electron app: extract every frame from a video, preview, apply 25+ filters, export individually.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.3.0"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "fluent-ffmpeg": "^2.1.3"
+  }
+}

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' vfs:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title data-i18n="app_title">Video Frame Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="state-welcome">
+  <!-- Slim top bar: brand · spacer · language picker · keyboard help · settings · open -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">VFS</span>
+      <span class="title" data-i18n="app_title">Video Frame Studio</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btnTopPlayPause" class="icon-btn" disabled data-i18n-title="play_title" title="Play">
+        <svg id="iconTopPlay" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        <svg id="iconTopPause" viewBox="0 0 24 24" width="18" height="18" hidden><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+      </button>
+      <span id="topPlayState" class="top-play-state muted" data-i18n="state_paused">Paused</span>
+      <button id="btnDoodle" class="btn" disabled data-i18n="btn_doodle">Doodle</button>
+      <button id="btnSnapshot" class="btn" disabled data-i18n="btn_snapshot">Snapshot Frame</button>
+      <span class="topbar-sep"></span>
+      <button id="btnManual" class="icon-btn" data-i18n-title="manual_title" title="Manual">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M21 5c-1.11-.35-2.33-.5-3.5-.5-1.95 0-4.05.4-5.5 1.5-1.45-1.1-3.55-1.5-5.5-1.5S2.45 4.9 1 6v14.65c0 .25.25.5.5.5.1 0 .15-.05.25-.05C3.1 20.45 5.05 20 6.5 20c1.95 0 4.05.4 5.5 1.5 1.35-.85 3.8-1.5 5.5-1.5 1.65 0 3.35.3 4.75 1.05.1.05.15.05.25.05.25 0 .5-.25.5-.5V6c-.6-.45-1.25-.75-2-1zm0 13.5c-1.1-.35-2.3-.5-3.5-.5-1.7 0-4.15.65-5.5 1.5V8c1.35-.85 3.8-1.5 5.5-1.5 1.2 0 2.4.15 3.5.5v11.5z"/></svg>
+      </button>
+      <button id="btnHelp" class="icon-btn" data-i18n-title="help_title" title="Keyboard shortcuts">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg>
+      </button>
+      <label class="lang-picker">
+        <select id="langSelect" data-i18n-title="lang_label" title="Language"></select>
+      </label>
+      <button id="btnPick" class="btn primary" data-i18n="btn_open">Open Video…</button>
+    </div>
+  </header>
+
+  <!-- Welcome screen (shown when no video loaded) -->
+  <section class="welcome" id="welcome">
+    <div class="welcome-card" id="dropZone">
+      <div class="welcome-icon">
+        <svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+      </div>
+      <h2 data-i18n="welcome_title">Drop a video here</h2>
+      <p class="muted" data-i18n="welcome_sub">or click to browse</p>
+      <p class="welcome-formats muted" data-i18n="welcome_formats">MP4 · MOV · MKV · WEBM · AVI · FLV · WMV · MPEG · TS</p>
+      <div class="welcome-shortcuts">
+        <span class="kbd">Space</span> <span data-i18n="play_pause">play/pause</span>
+        <span class="kbd">←→</span> <span data-i18n="seek_label">seek</span>
+        <span class="kbd">,</span><span class="kbd">.</span> <span data-i18n="frame_step_label">frame step</span>
+        <span class="kbd">I</span><span class="kbd">O</span> <span data-i18n="loop_ab_label">A-B loop</span>
+        <span class="kbd">?</span> <span data-i18n="more_label">more</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Player layout (shown after video loads) -->
+  <main class="layout" id="layout">
+    <section class="player-pane">
+      <div class="stage" id="stage">
+        <video id="videoEl" preload="metadata" playsinline></video>
+        <canvas id="previewCanvas"></canvas>
+        <canvas id="doodleCanvas" hidden></canvas>
+        <div id="doodleTextEditor" class="doodle-text-editor" hidden contenteditable="true"></div>
+        <div id="doodleToolbar" class="doodle-toolbar" hidden>
+          <button class="dt-btn" id="dtToolPen" data-tool="pen" data-i18n-title="doodle_pen" title="Pen">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+          <button class="dt-btn" id="dtToolText" data-tool="text" data-i18n-title="doodle_text" title="Text">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M5 4v3h5.5v12h3V7H19V4z"/></svg>
+          </button>
+          <button class="dt-btn" id="dtToolArrow" data-tool="arrow" data-i18n-title="doodle_arrow" title="Arrow">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 13h11.2l-3.6 3.6L13 18l6-6-6-6-1.4 1.4L15.2 11H4z"/></svg>
+          </button>
+          <button class="dt-btn" id="dtToolMove" data-tool="move" data-i18n-title="doodle_move" title="Move">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M13 6.41V11h4.59L16 9.41 17.41 8 21 11.59V12.4L17.41 16 16 14.59 17.59 13H13v4.59L14.59 16 16 17.41 12.4 21h-.81L8 17.41 9.41 16 11 17.59V13H6.41L8 14.59 6.59 16 3 12.41v-.81L6.59 8 8 9.41 6.41 11H11V6.41L9.41 8 8 6.59 11.59 3h.81L16 6.59 14.59 8z"/></svg>
+          </button>
+          <span class="dt-sep"></span>
+          <label class="dt-color" data-i18n-title="doodle_color" title="Color">
+            <input type="color" id="dtColor" value="#ff3b30" />
+          </label>
+          <label class="dt-size" data-i18n-title="doodle_size" title="Size">
+            <input type="range" id="dtSize" min="1" max="40" value="4" />
+          </label>
+          <label class="dt-font-size" data-i18n-title="doodle_font_size" title="Font size">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9 4v2h3.5v12h2V6H18V4z"/></svg>
+            <input type="number" id="dtFontSize" min="8" max="200" step="1" value="24" />
+          </label>
+          <span class="dt-sep"></span>
+          <button class="dt-btn" id="dtUndo" data-i18n-title="doodle_undo" title="Undo">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78A9.99 9.99 0 0 0 12.5 8z"/></svg>
+          </button>
+          <button class="dt-btn" id="dtClear" data-i18n-title="doodle_clear" title="Clear">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M16.24 3.56 4.22 15.58A2 2 0 0 0 4.22 18.4l1.41 1.41a2 2 0 0 0 2.83 0L20.49 7.78a2 2 0 0 0 0-2.83L19.07 3.54a2 2 0 0 0-2.83.02zM5 21h14v-2H5v2z"/></svg>
+          </button>
+          <button class="dt-btn dt-exit" id="dtExit" data-i18n-title="doodle_exit" title="Exit">×</button>
+        </div>
+        <div id="centerBadge" class="center-badge" hidden></div>
+        <div id="filterPausedHint" class="filter-paused-hint" hidden data-i18n="filter_paused_hint">Pause to apply this filter</div>
+        <!-- file name overlay -->
+        <div class="stage-titlebar" id="stageTitlebar"></div>
+      </div>
+
+      <!-- Transport: timeline + control rows -->
+      <div class="transport">
+        <div class="timeline-wrap">
+          <span id="timeCur" class="time">0:00.00</span>
+          <div class="timeline" id="timeline">
+            <div class="tl-track"></div>
+            <div class="tl-buffer" id="tlBuffer"></div>
+            <div class="tl-loop" id="tlLoop"></div>
+            <div class="tl-progress" id="tlProgress"></div>
+            <div class="tl-marker tl-marker-a" id="tlMarkerA" hidden></div>
+            <div class="tl-marker tl-marker-b" id="tlMarkerB" hidden></div>
+            <div class="tl-thumb" id="tlThumb"></div>
+            <div class="tl-tooltip" id="tlTooltip" hidden></div>
+            <input id="seekSlider" type="range" min="0" max="1000" value="0" step="0.1" />
+          </div>
+          <span id="timeDur" class="time">0:00.00</span>
+        </div>
+
+        <div class="transport-row">
+          <!-- Left group: playback -->
+          <div class="tr-group">
+            <button id="btnFirst" class="tr-btn" disabled data-i18n-title="nav_first_title" title="Home">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+            </button>
+            <button id="btnStepBack" class="tr-btn" disabled data-i18n-title="step_back_title" title=",">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11 18V6l-8.5 6zM11.5 12l8.5 6V6z"/></svg>
+            </button>
+            <button id="btnPlayPause" class="tr-btn pp" disabled data-i18n-title="play_title" title="Space">
+              <svg id="iconPlay" viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+              <svg id="iconPause" viewBox="0 0 24 24" width="22" height="22" hidden><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+            </button>
+            <button id="btnStepFwd" class="tr-btn" disabled data-i18n-title="step_fwd_title" title=".">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 6v12l8.5-6zM13 6v12h2V6zM17 6v12l5-6z" /></svg>
+            </button>
+            <button id="btnLast" class="tr-btn" disabled data-i18n-title="nav_last_title" title="End">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="m6 18 8.5-6L6 6zM16 6h2v12h-2z"/></svg>
+            </button>
+          </div>
+
+          <div class="tr-sep"></div>
+
+          <!-- Loop A-B -->
+          <div class="tr-group loop-group">
+            <button id="btnLoopIn" class="tr-btn small" disabled data-i18n-title="loop_in_title" title="I">
+              <span class="loop-letter">A</span>
+            </button>
+            <button id="btnLoopOut" class="tr-btn small" disabled data-i18n-title="loop_out_title" title="O">
+              <span class="loop-letter">B</span>
+            </button>
+            <button id="btnLoopToggle" class="tr-btn small" disabled data-i18n-title="loop_toggle_title" title="L">
+              <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4zM7 7h10v3l4-4-4-4v3H5v6h2V7z"/></svg>
+            </button>
+            <button id="btnLoopClear" class="tr-btn small" disabled data-i18n-title="loop_clear_title" title="\\">×</button>
+          </div>
+
+          <div class="tr-sep"></div>
+
+          <!-- Speed -->
+          <div class="tr-group">
+            <select id="speedSelect" class="speed-select" disabled data-i18n-title="speed_label">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+            </select>
+          </div>
+
+          <!-- Spacer -->
+          <div class="tr-spacer"></div>
+
+          <!-- Frame info -->
+          <span id="frameInfo" class="frame-info muted"></span>
+
+          <div class="tr-sep"></div>
+
+          <!-- Volume -->
+          <div class="tr-group volume-group">
+            <button id="btnMute" class="tr-btn small" disabled data-i18n-title="mute_title" title="M">
+              <svg id="iconVol" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+              <svg id="iconMute" viewBox="0 0 24 24" width="18" height="18" hidden><path fill="currentColor" d="M16.5 12A4.5 4.5 0 0 0 14 8v2.18l2.45 2.45a4.45 4.45 0 0 0 .05-.63zM3.27 3 2 4.27 6.73 9H3v6h4l5 5v-6.73l4.25 4.26a7.05 7.05 0 0 1-1.25.47v2.05a8.97 8.97 0 0 0 2.69-1.07L19.73 21 21 19.73l-9-9L3.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>
+            </button>
+            <input id="volumeSlider" type="range" min="0" max="100" value="80" disabled />
+          </div>
+
+          <button id="btnFullscreen" class="tr-btn small" disabled data-i18n-title="fullscreen_title" title="F">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+          </button>
+        </div>
+
+        <!-- Extract toolbar — always visible, between transport and filmstrip -->
+        <div class="extract-bar" id="extractBar">
+          <div class="extract-bar-icon">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 5h2v14H3V5zm4 0h2v14H7V5zm4 0h10v3H11V5zm0 4h10v3H11V9zm0 4h10v3H11v-3zm0 4h10v2H11v-2z"/></svg>
+            <span class="extract-bar-title" data-i18n="extract_settings_title">Frame extraction</span>
+          </div>
+          <div class="extract-bar-fields">
+            <label class="extract-field">
+              <span data-i18n="opt_fps">Sample FPS</span>
+              <input id="optFps" type="number" min="0" step="0.5" value="0" data-i18n-title="opt_fps_title" />
+            </label>
+            <label class="extract-field">
+              <span data-i18n="opt_max">Max frames</span>
+              <input id="optMax" type="number" min="0" step="1" value="600" data-i18n-title="opt_max_title" />
+            </label>
+            <label class="extract-field">
+              <span data-i18n="opt_quality">Quality</span>
+              <input id="optQuality" type="number" min="2" max="31" step="1" value="3" data-i18n-title="opt_quality_title" />
+            </label>
+          </div>
+          <span id="extractStatus" class="extract-status muted"></span>
+          <label class="extract-field audio-field">
+            <span data-i18n="opt_audio_format">Audio format</span>
+            <select id="optAudioFormat" data-i18n-title="opt_audio_format_title" title="Audio format">
+              <option value="mp3">MP3</option>
+              <option value="wav">WAV</option>
+              <option value="m4a">M4A (AAC)</option>
+              <option value="flac">FLAC</option>
+              <option value="ogg">OGG (Vorbis)</option>
+            </select>
+          </label>
+          <button id="btnExtractAudio" class="btn" disabled data-i18n="btn_extract_audio">Extract Audio</button>
+          <button id="btnExtract" class="btn primary" disabled data-i18n="btn_extract">Extract Frames</button>
+        </div>
+
+        <!-- Filmstrip -->
+        <div id="filmstrip" class="filmstrip" hidden></div>
+      </div>
+    </section>
+
+    <!-- Right pane: filter grid -->
+    <aside class="filters-pane">
+      <!-- Sticky hero card showing the active filter + strength -->
+      <div class="filters-hero">
+        <div class="hero-row">
+          <div class="hero-text">
+            <div class="hero-name" id="heroName">—</div>
+            <div class="hero-desc" id="heroDesc"></div>
+          </div>
+          <button id="btnReset" class="hero-reset" disabled data-i18n-title="btn_reset" title="Reset">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+        </div>
+        <div class="hero-strength">
+          <input id="filterStrength" type="range" min="0" max="100" value="100" />
+          <span id="filterStrengthVal">100%</span>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="filter-search-row">
+        <svg viewBox="0 0 24 24" width="14" height="14" class="search-icon"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 5 1.49-1.5-5-4.99zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+        <input id="filterSearch" class="filter-search" type="search" placeholder="Search filters…" data-i18n-placeholder="filter_search_placeholder" />
+      </div>
+
+      <!-- Category tabs -->
+      <div class="filter-cats" id="filterCats"></div>
+
+      <!-- Filter grid (scrolls) -->
+      <div id="filtersGrid" class="filters-grid"></div>
+
+      <!-- Sticky export footer -->
+      <div class="filters-footer">
+        <button id="btnExportFiltered" class="btn primary" disabled data-i18n="btn_export_filtered">Export Filtered (PNG)</button>
+        <button id="btnExportOriginal" class="btn" disabled data-i18n-title="btn_export_original" title="Export original">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg>
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Drag-drop overlay -->
+  <div id="dropOverlay" class="drop-overlay" hidden>
+    <div class="drop-overlay-inner">
+      <svg viewBox="0 0 24 24" width="64" height="64"><path fill="currentColor" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <h2 data-i18n="drop_release">Drop to open</h2>
+    </div>
+  </div>
+
+  <!-- Keyboard help modal -->
+  <div id="helpModal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 data-i18n="help_title">Keyboard shortcuts</h3>
+        <button class="icon-btn" id="btnHelpClose">×</button>
+      </div>
+      <div class="help-grid">
+        <div class="help-section">
+          <h4 data-i18n="help_playback">Playback</h4>
+          <dl>
+            <dt><span class="kbd">Space</span> / <span class="kbd">K</span></dt><dd data-i18n="play_pause">Play / Pause</dd>
+            <dt><span class="kbd">J</span> / <span class="kbd">L</span></dt><dd data-i18n="help_jl">Back / Forward 10s</dd>
+            <dt><span class="kbd">←</span> / <span class="kbd">→</span></dt><dd data-i18n="help_arrows">Step (paused) / Seek 5s (playing)</dd>
+            <dt><span class="kbd">Shift+←</span> / <span class="kbd">Shift+→</span></dt><dd data-i18n="help_shift_arrows">Seek ±10s</dd>
+            <dt><span class="kbd">,</span> / <span class="kbd">.</span></dt><dd data-i18n="help_comma_dot">Step ±1 frame</dd>
+            <dt><span class="kbd">Home</span> / <span class="kbd">End</span></dt><dd data-i18n="help_home_end">First / Last frame</dd>
+          </dl>
+        </div>
+        <div class="help-section">
+          <h4 data-i18n="help_loop">A-B Loop</h4>
+          <dl>
+            <dt><span class="kbd">I</span></dt><dd data-i18n="help_set_a">Set loop in (A)</dd>
+            <dt><span class="kbd">O</span></dt><dd data-i18n="help_set_b">Set loop out (B)</dd>
+            <dt><span class="kbd">\\</span></dt><dd data-i18n="help_clear_loop">Clear loop</dd>
+          </dl>
+          <h4 data-i18n="help_audio">Audio &amp; view</h4>
+          <dl>
+            <dt><span class="kbd">↑</span> / <span class="kbd">↓</span></dt><dd data-i18n="help_volume">Volume ±5%</dd>
+            <dt><span class="kbd">M</span></dt><dd data-i18n="mute_title">Mute</dd>
+            <dt><span class="kbd">F</span></dt><dd data-i18n="fullscreen_title">Fullscreen</dd>
+          </dl>
+        </div>
+        <div class="help-section">
+          <h4 data-i18n="help_filters">Filters</h4>
+          <dl>
+            <dt><span class="kbd">1</span>…<span class="kbd">9</span></dt><dd data-i18n="help_filter_keys">Apply filter 1-9</dd>
+            <dt><span class="kbd">/</span></dt><dd data-i18n="help_search">Focus search</dd>
+            <dt><span class="kbd">?</span></dt><dd data-i18n="help_toggle">Toggle this help</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div id="toast" class="toast" hidden></div>
+  <div id="progress" class="progress" hidden>
+    <div class="progress-inner">
+      <div class="spinner"></div>
+      <div id="progressText" data-i18n="working">Working…</div>
+    </div>
+  </div>
+
+  <!-- Hidden meta strip used internally to relabel things; not displayed -->
+  <div id="metaBar" hidden>
+    <span id="metaFile"></span><span id="metaDims"></span><span id="metaDur"></span>
+    <span id="metaFps"></span><span id="metaCodec"></span><span id="metaCount"></span>
+  </div>
+  <span id="previewInfo" hidden></span>
+  <span id="activeFilterName" hidden></span>
+
+  <script src="i18n.js"></script>
+  <script src="i18n_player.js"></script>
+  <script src="filters.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
