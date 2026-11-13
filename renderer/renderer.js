@@ -393,6 +393,10 @@ function applyFilterVisibility() {
   tiles.forEach((tile) => { tile.style.display = 'none'; });
   matched.slice(start, end).forEach((tile) => { tile.style.display = ''; });
   updatePager(matched.length, totalPages);
+  // Tiles that just became visible may never have been painted — fill them in.
+  recomputeVisibleTiles();
+  pixelCursor = 0;
+  refreshVisibleThumbnails(true);
 }
 
 function updatePager(matchedCount, totalPages) {
@@ -433,46 +437,312 @@ function refreshFilterTilesText() {
   refreshHeroCard();
 }
 
-// Generate per-filter thumbnails based on the current frame.
-async function regenerateFilterThumbnails() {
-  if (!state.hasVideo) return;
-  const v = els.videoEl;
-  if (!v.videoWidth || !v.videoHeight) return;
-  const ratio = v.videoWidth / v.videoHeight;
-  const W = TILE_THUMB_W, H = Math.round(W / ratio);
-  const base = document.createElement('canvas');
-  base.width = W; base.height = H;
-  const bctx = base.getContext('2d', { willReadFrequently: true });
-  bctx.drawImage(v, 0, 0, W, H);
-  let baseData;
-  try {
-    baseData = bctx.getImageData(0, 0, W, H);
-  } catch (e) {
-    console.error('[VFS] getImageData failed:', e);
-    return;
-  }
+// ---------- filter palette thumbnails ----------
+// Two paths, chosen per filter:
+//   • "live" filters (those exposing `cssFilter`) — one small drawImage plus a
+//     canvas→canvas blit; the look itself is applied by the GPU compositor via
+//     CSS `filter`. No getImageData, no pixel loop, so it can run on every
+//     rendered video frame.
+//   • pure-pixel filters — a real ImageData pass on the CPU. Rendered at a
+//     smaller size, throttled, and spread across ticks under a time budget.
+// Only tiles actually on screen (matched by category/search AND on the current
+// page) are ever touched — that alone cuts ~34 filters down to at most 8.
 
-  const tiles = els.filtersGrid.querySelectorAll('.filter-tile');
-  for (const tile of tiles) {
-    const id = tile.dataset.filterId;
-    const f = window.VFSFilters.get(id);
-    if (!f) continue;
-    const copy = new ImageData(new Uint8ClampedArray(baseData.data), W, H);
-    const out = window.VFSFilters.apply(id, copy, 1.0);
-    const c = document.createElement('canvas');
-    c.width = W; c.height = H;
-    c.getContext('2d').putImageData(out, 0, 0);
-    c.className = 'tile-thumb-canvas';
+const TILE_PIXEL_W = 120;      // CPU path renders smaller: ~2.8x fewer pixels
+const PIXEL_REFRESH_MS = 200;  // ~5 Hz for the CPU path while playing
+const PIXEL_BUDGET_MS = 6;     // per-tick CPU budget, keeps the frame responsive
+
+// A fully transparent / pure-black sample means the decoder had nothing to
+// paint yet — drawImage succeeds but yields an empty canvas.
+function isBlankFrame(img) {
+  const d = img.data;
+  const px = d.length / 4;
+  const stride = Math.max(1, Math.floor(px / 1500)); // sample ~1.5k pixels
+  for (let p = 0; p < px; p += stride) {
+    const i = p * 4;
+    if (d[i + 3] > 8 && (d[i] > 8 || d[i + 1] > 8 || d[i + 2] > 8)) return false;
+  }
+  return true;
+}
+
+function tileThumbHeight(w) {
+  const v = els.videoEl;
+  if (!v.videoWidth || !v.videoHeight) return 0;
+  return Math.max(1, Math.round(w / (v.videoWidth / v.videoHeight)));
+}
+
+// Probe whether the decoder can give us a usable frame yet.
+function hasPaintableFrame(acceptBlank = false) {
+  const H = tileThumbHeight(64);
+  if (!H) return false;
+  const probe = document.createElement('canvas');
+  probe.width = 64; probe.height = H;
+  const ctx = probe.getContext('2d', { willReadFrequently: true });
+  try {
+    ctx.drawImage(els.videoEl, 0, 0, 64, H);
+    if (acceptBlank) return true;
+    return !isBlankFrame(ctx.getImageData(0, 0, 64, H));
+  } catch (e) {
+    console.error('[VFS] frame probe failed:', e);
+    return false;
+  }
+}
+
+// Visible tiles, split by render path. Refilled by applyFilterVisibility so the
+// per-frame loop never has to touch the DOM to find its work.
+let visibleLiveTiles = [];
+let visiblePixelTiles = [];
+
+function recomputeVisibleTiles() {
+  visibleLiveTiles = [];
+  visiblePixelTiles = [];
+  els.filtersGrid.querySelectorAll('.filter-tile').forEach((t) => {
+    if (t.style.display === 'none') return;
+    (t.dataset.live === '1' ? visibleLiveTiles : visiblePixelTiles).push(t);
+  });
+}
+
+function tileCtx(c) {
+  if (!c._ctx) c._ctx = c.getContext('2d');
+  return c._ctx;
+}
+
+function ensureTileCanvas(tile, w, h) {
+  // Cached on the tile; `isConnected` invalidates it when loadVideoFile wipes
+  // the canvases on a new video.
+  let c = tile._thumbCanvas;
+  if (!c || !c.isConnected) {
     const thumb = tile.querySelector('.tile-thumb');
-    if (thumb) {
-      thumb.classList.remove('empty');
-      const prev = thumb.querySelector('.tile-thumb-canvas');
-      if (prev) prev.remove();
+    if (!thumb) return null;
+    c = thumb.querySelector('.tile-thumb-canvas');
+    if (!c) {
+      c = document.createElement('canvas');
+      c.className = 'tile-thumb-canvas';
       thumb.appendChild(c);
     }
-    state.tileThumbs.set(id, c);
-    await new Promise((r) => setTimeout(r, 0));
+    tile._thumb = thumb;
+    tile._thumbCanvas = c;
   }
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return c;
+}
+
+function markTilePainted(tile) {
+  const thumb = tile._thumb || tile.querySelector('.tile-thumb');
+  if (thumb && thumb.classList.contains('empty')) thumb.classList.remove('empty');
+}
+
+// --- live / GPU path ---
+let liveBase = null;
+let liveBaseCtx = null;
+
+function drawLiveTiles(tiles) {
+  if (!tiles.length) return;
+  const W = TILE_THUMB_W, H = tileThumbHeight(W);
+  if (!H) return;
+  if (!liveBase) {
+    liveBase = document.createElement('canvas');
+    liveBaseCtx = liveBase.getContext('2d', { alpha: false });
+  }
+  if (liveBase.width !== W || liveBase.height !== H) {
+    liveBase.width = W; liveBase.height = H;
+  }
+  try {
+    liveBaseCtx.drawImage(els.videoEl, 0, 0, W, H);
+  } catch {
+    return;
+  }
+  for (const tile of tiles) {
+    const f = window.VFSFilters.get(tile.dataset.filterId);
+    if (!f || !f.cssFilter) continue;
+    const c = ensureTileCanvas(tile, W, H);
+    if (!c) continue;
+    // The look is a constant CSS string per filter — set it once, let the
+    // compositor do the work.
+    const css = f.cssFilter(1);
+    if (c.dataset.css !== css) {
+      c.style.filter = css;
+      c.dataset.css = css;
+    }
+    tileCtx(c).drawImage(liveBase, 0, 0);
+    markTilePainted(tile);
+    state.tileThumbs.set(tile.dataset.filterId, c);
+  }
+}
+
+// --- pure-pixel / CPU path ---
+let pixelBase = null;
+let pixelBaseCtx = null;
+let pixelCursor = 0;
+let lastPixelRun = 0;
+
+function capturePixelBase() {
+  const W = TILE_PIXEL_W, H = tileThumbHeight(W);
+  if (!H) return null;
+  if (!pixelBase) {
+    pixelBase = document.createElement('canvas');
+    pixelBaseCtx = pixelBase.getContext('2d', { willReadFrequently: true });
+  }
+  if (pixelBase.width !== W || pixelBase.height !== H) {
+    pixelBase.width = W; pixelBase.height = H;
+  }
+  try {
+    pixelBaseCtx.drawImage(els.videoEl, 0, 0, W, H);
+    return pixelBaseCtx.getImageData(0, 0, W, H);
+  } catch (e) {
+    console.error('[VFS] pixel base capture failed:', e);
+    return null;
+  }
+}
+
+function renderPixelTile(tile, base) {
+  const id = tile.dataset.filterId;
+  const f = window.VFSFilters.get(id);
+  if (!f) return;
+  const W = base.width, H = base.height;
+  const copy = new ImageData(new Uint8ClampedArray(base.data), W, H);
+  const out = window.VFSFilters.apply(id, copy, 1.0);
+  const c = ensureTileCanvas(tile, W, H);
+  if (!c) return;
+  if (c.dataset.css) { c.style.filter = ''; delete c.dataset.css; }
+  tileCtx(c).putImageData(out, 0, 0);
+  markTilePainted(tile);
+  state.tileThumbs.set(id, c);
+}
+
+// Round-robin across the visible pixel tiles so every one eventually refreshes,
+// without ever blowing a single frame's budget.
+function drawPixelTiles(tiles, force) {
+  if (!tiles.length) return;
+  const base = capturePixelBase();
+  if (!base) return;
+  const deadline = performance.now() + PIXEL_BUDGET_MS;
+  if (pixelCursor >= tiles.length) pixelCursor = 0;
+  for (let n = 0; n < tiles.length; n++) {
+    renderPixelTile(tiles[pixelCursor % tiles.length], base);
+    pixelCursor++;
+    if (!force && performance.now() >= deadline) break;
+  }
+}
+
+// Skip the CPU path while scrubbing or at high playback rates — the decoder and
+// the timeline need the main thread more than the palette does.
+function pixelRefreshSuspended() {
+  return state.isSeeking || els.videoEl.playbackRate > 2 || document.hidden;
+}
+
+function refreshVisibleThumbnails(force = false) {
+  if (!state.hasVideo) return;
+
+  drawLiveTiles(visibleLiveTiles);
+
+  if (!visiblePixelTiles.length) return;
+  const now = performance.now();
+  if (!force && now - lastPixelRun < PIXEL_REFRESH_MS) return;
+  if (!force && pixelRefreshSuspended()) return;
+  lastPixelRun = now;
+  drawPixelTiles(visiblePixelTiles, force);
+}
+
+// --- the per-frame loop ---
+let thumbLoopHandle = null;
+let thumbLoopKind = null;
+
+function thumbLoopShouldRun() {
+  return state.hasVideo
+    && !els.videoEl.paused
+    && !els.videoEl.ended
+    && !document.hidden;
+}
+
+function thumbLoopTick() {
+  thumbLoopHandle = null;
+  if (!thumbLoopShouldRun()) return;
+  refreshVisibleThumbnails(false);
+  startThumbLoop();
+}
+
+// Prefer requestVideoFrameCallback: it fires once per *decoded* frame, so we
+// never redo work for a frame the compositor already showed.
+function startThumbLoop() {
+  if (thumbLoopHandle != null || !thumbLoopShouldRun()) return;
+  const v = els.videoEl;
+  if (typeof v.requestVideoFrameCallback === 'function') {
+    thumbLoopKind = 'rvfc';
+    thumbLoopHandle = v.requestVideoFrameCallback(thumbLoopTick);
+  } else {
+    thumbLoopKind = 'raf';
+    thumbLoopHandle = requestAnimationFrame(thumbLoopTick);
+  }
+}
+
+function stopThumbLoop() {
+  if (thumbLoopHandle == null) return;
+  const v = els.videoEl;
+  try {
+    if (thumbLoopKind === 'rvfc' && typeof v.cancelVideoFrameCallback === 'function') {
+      v.cancelVideoFrameCallback(thumbLoopHandle);
+    } else if (thumbLoopKind === 'raf') {
+      cancelAnimationFrame(thumbLoopHandle);
+    }
+  } catch {}
+  thumbLoopHandle = null;
+}
+
+let videoLoadToken = 0;
+let thumbWaitTimer = null;
+let thumbWaitAbort = null;
+
+// Wait for the first paintable frame, then build the palette thumbnails.
+// `loadeddata` / `canplay` alone are unreliable: depending on codec and preload
+// state they may fire late, never fire until playback starts, or fire while
+// drawImage still returns a blank canvas. So poll, nudge the decoder with a
+// hair-width seek, and only give up after a bounded number of tries.
+function scheduleFilterThumbnails() {
+  const myToken = ++videoLoadToken;
+  if (thumbWaitTimer) { clearInterval(thumbWaitTimer); thumbWaitTimer = null; }
+  if (thumbWaitAbort) thumbWaitAbort.abort();
+  thumbWaitAbort = new AbortController();
+
+  let attempts = 0;
+  let nudged = false;
+  const MAX_ATTEMPTS = 40; // 40 × 150ms ≈ 6s
+
+  const stop = () => {
+    if (thumbWaitTimer) { clearInterval(thumbWaitTimer); thumbWaitTimer = null; }
+    if (thumbWaitAbort) { thumbWaitAbort.abort(); thumbWaitAbort = null; }
+  };
+
+  // Returns true when there is nothing left to wait for.
+  const attempt = () => {
+    if (myToken !== videoLoadToken || !state.hasVideo) return true;
+    attempts++;
+    // On the last try accept whatever we get: a genuinely black opening frame is
+    // legitimate, and an empty palette forever is worse than dark tiles.
+    const last = attempts >= MAX_ATTEMPTS;
+    if (hasPaintableFrame(last)) {
+      refreshVisibleThumbnails(true);
+      startThumbLoop();
+      return true;
+    }
+    // Still nothing: force a decode if the element is idling on metadata only.
+    if (!nudged && attempts >= 2 && els.videoEl.readyState >= 1 && els.videoEl.paused) {
+      nudged = true;
+      try { els.videoEl.currentTime = els.videoEl.currentTime + 0.001; } catch {}
+    }
+    return last;
+  };
+
+  if (attempt()) return;
+
+  thumbWaitTimer = setInterval(() => { if (attempt()) stop(); }, 150);
+
+  // Fast paths — react the moment the decoder reports progress.
+  const signal = thumbWaitAbort.signal;
+  const onReady = () => { if (attempt()) stop(); };
+  els.videoEl.addEventListener('loadeddata', onReady, { once: true, signal });
+  els.videoEl.addEventListener('canplay', onReady, { once: true, signal });
+  els.videoEl.addEventListener('seeked', onReady, { once: true, signal });
 }
 
 // ---------- filter rendering on stage ----------
@@ -573,6 +843,9 @@ async function loadVideoFile(filePath) {
     state.frames = [];
     state.thumbCache.clear();
     state.tileThumbs.clear();
+    stopThumbLoop(); // the previous video's per-frame loop must not outlive it
+    pixelCursor = 0;
+    lastPixelRun = 0;
     if (filmstripObserver) { filmstripObserver.disconnect(); filmstripObserver = null; }
     els.filmstrip.innerHTML = '';
     els.filmstrip.hidden = true;
@@ -618,24 +891,8 @@ async function loadVideoFile(filePath) {
     applyFilterMode();
     hideProgress();
 
-    // Schedule filter thumbnails after the first frame is decoded.
-    // readyState >= 2 (HAVE_CURRENT_DATA) means a frame is already available.
-    const triggerThumbs = () => {
-      // Guard: only run once per load.
-      if (triggerThumbs._done) return;
-      triggerThumbs._done = true;
-      regenerateFilterThumbnails();
-    };
-    if (els.videoEl.readyState >= 2 && els.videoEl.videoWidth > 0) {
-      triggerThumbs();
-    } else {
-      els.videoEl.addEventListener('loadeddata', triggerThumbs, { once: true });
-      els.videoEl.addEventListener('canplay', triggerThumbs, { once: true });
-      // Belt-and-suspenders: in case neither event fires on some codec paths.
-      setTimeout(() => {
-        if (els.videoEl.readyState >= 2 && els.videoEl.videoWidth > 0) triggerThumbs();
-      }, 800);
-    }
+    // Build filter thumbnails as soon as the decoder yields a real frame.
+    scheduleFilterThumbnails();
   } catch (e) {
     hideProgress();
     showToast(T('toast_probe_failed', { msg: e.message }), true);
@@ -1845,6 +2102,7 @@ function init() {
     if (els.topPlayState) els.topPlayState.textContent = T('state_playing');
     // Doodle is paused-only; auto-exit on play.
     if (state.doodleActive) setDoodleActive(false);
+    startThumbLoop();
   });
   v.addEventListener('pause', () => {
     els.iconPlay.hidden = false;
@@ -1858,6 +2116,10 @@ function init() {
     if (f && !f.cssFilter && state.activeFilterId !== 'original') {
       drawFilteredFrameToCanvas();
     }
+    // Paused: stop the per-frame loop and settle the palette on this exact
+    // frame — no budget limit, every visible tile gets refreshed.
+    stopThumbLoop();
+    refreshVisibleThumbnails(true);
   });
   v.addEventListener('timeupdate', () => {
     enforceLoop();
@@ -1874,6 +2136,8 @@ function init() {
       drawFilteredFrameToCanvas();
     }
     if (state.frames.length > 0) updateFilmstripActive();
+    // Landed on a new position — sync the palette even while paused.
+    if (els.videoEl.paused) refreshVisibleThumbnails(true);
   });
   v.addEventListener('progress', updateTimelineUI);
   v.addEventListener('volumechange', updateVolumeUI);
@@ -1936,7 +2200,14 @@ function init() {
     seekToFrameIndex(i, item);
   });
 
+  // Backgrounded window: nothing to repaint, so stop burning cycles.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopThumbLoop();
+    else startThumbLoop();
+  });
+
   window.addEventListener('beforeunload', () => {
+    stopThumbLoop();
     if (state.sessionId) window.api.cleanupSession(state.sessionId);
   });
 }
