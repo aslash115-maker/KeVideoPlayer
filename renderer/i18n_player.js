@@ -76,6 +76,9 @@
       cat_blur: '模糊锐化',
       cat_distort: '失真',
       cat_mood: '氛围',
+      cat_live: '实时',
+      pager_prev: '上一页',
+      pager_next: '下一页',
     },
     'zh-TW': {
       manual_title: '使用說明書',
@@ -142,6 +145,7 @@
       cat_blur: '模糊銳化',
       cat_distort: '失真',
       cat_mood: '氛圍',
+      cat_live: '即時',
     },
     'en': {
       manual_title: 'User manual',
@@ -211,6 +215,9 @@
       cat_blur: 'Blur/Sharp',
       cat_distort: 'Distort',
       cat_mood: 'Mood',
+      cat_live: 'Live',
+      pager_prev: 'Previous page',
+      pager_next: 'Next page',
     },
     'ja': {
       manual_title: '取扱説明書',
@@ -277,6 +284,7 @@
       cat_blur: 'ぼかし/シャープ',
       cat_distort: '歪み',
       cat_mood: 'ムード',
+      cat_live: 'ライブ',
     },
     'ko': {
       manual_title: '사용 설명서',
@@ -343,6 +351,7 @@
       cat_blur: '블러/샤픈',
       cat_distort: '왜곡',
       cat_mood: '분위기',
+      cat_live: '실시간',
     },
     'es': {
       btn_extract_opts: 'Extraer…',
@@ -409,6 +418,7 @@
       cat_blur: 'Desenfoque',
       cat_distort: 'Distorsión',
       cat_mood: 'Ambiente',
+      cat_live: 'En vivo',
       manual_title: 'Manual de usuario',
     },
     'fr': {
@@ -476,6 +486,7 @@
       cat_blur: 'Flou/Netteté',
       cat_distort: 'Distorsion',
       cat_mood: 'Ambiance',
+      cat_live: 'En direct',
     },
     'de': {
       manual_title: 'Bedienungsanleitung',
@@ -542,6 +553,7 @@
       cat_blur: 'Unschärfe',
       cat_distort: 'Verzerren',
       cat_mood: 'Stimmung',
+      cat_live: 'Live',
     },
     'ru': {
       manual_title: 'Руководство',
@@ -608,6 +620,7 @@
       cat_blur: 'Размытие',
       cat_distort: 'Искажение',
       cat_mood: 'Настроение',
+      cat_live: 'В реальном времени',
     },
     'pt': {
       btn_extract_opts: 'Extrair…',
@@ -673,6 +686,7 @@
       cat_blur: 'Desfoque',
       cat_distort: 'Distorção',
       cat_mood: 'Ambiente',
+      cat_live: 'Ao vivo',
       manual_title: 'Manual de usuario',
     },
     'it': {
@@ -740,6 +754,7 @@
       cat_blur: 'Sfocatura',
       cat_distort: 'Distorsione',
       cat_mood: 'Atmosfera',
+      cat_live: 'In diretta',
     },
     'ar': {
       btn_extract_opts: 'استخراج…',
@@ -796,6 +811,7 @@
       cat_blur: 'تمويه',
       cat_distort: 'تشويه',
       cat_mood: 'مزاج',
+      cat_live: 'مباشر',
       manual_title: 'دليل الاستخدام',
     },
   };

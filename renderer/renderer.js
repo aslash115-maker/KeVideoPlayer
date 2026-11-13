@@ -92,6 +92,10 @@ const els = {
   activeFilterName: $('activeFilterName'),
   filterStrength: $('filterStrength'),
   filterStrengthVal: $('filterStrengthVal'),
+  filtersPager: $('filtersPager'),
+  pagerPrev: $('pagerPrev'),
+  pagerNext: $('pagerNext'),
+  pagerInfo: $('pagerInfo'),
   heroName: $('heroName'),
   heroDesc: $('heroDesc'),
   // overlays
@@ -120,7 +124,8 @@ const state = {
   isSeeking: false,
   lastVolume: 0.8,
   tileThumbs: new Map(), // filterId -> dataURL of preview thumbnail
-  activeCategory: 'all',
+  activeCategory: 'live',
+  filterPage: 0,
   dragDepth: 0,
   // Track previously known active filmstrip index to avoid full DOM scans.
   prevActiveIdx: -1,
@@ -132,7 +137,7 @@ const state = {
   doodleStrokes: [], // each: {type:'stroke', color, size, points:[{x,y},...]} or {type:'text', x,y,text,color,size}
 };
 
-const CATEGORIES = ['all', 'basic', 'color', 'bw', 'stylize', 'blur', 'distort', 'mood'];
+const CATEGORIES = ['live', 'all', 'basic', 'color', 'bw', 'stylize', 'blur', 'distort', 'mood'];
 
 const previewCtx = els.previewCanvas.getContext('2d', { willReadFrequently: true });
 
@@ -234,14 +239,42 @@ function buildFilterTiles() {
   const list = window.VFSFilters.list();
   els.filtersGrid.innerHTML = '';
   list.forEach((f, i) => {
-    const tile = document.createElement('button');
+    const tile = document.createElement('div');
     tile.className = 'filter-tile';
+    tile.setAttribute('role', 'button');
+    tile.setAttribute('tabindex', '0');
     tile.dataset.filterId = f.id;
     tile.dataset.category = f.category || 'stylize';
-    tile.disabled = true;
+    tile.dataset.live = f.cssFilter ? '1' : '0';
+    tile.dataset.disabled = '1';
     tile.title = T(`f_${f.id}_d`);
 
-    // Text column
+    // Thumbnail fills the whole tile
+    const thumb = document.createElement('div');
+    thumb.className = 'tile-thumb empty';
+    tile.appendChild(thumb);
+
+    // Number key chip (top-left)
+    if (i >= 1 && i <= 9) {
+      const key = document.createElement('span');
+      key.className = 'tile-key';
+      key.textContent = String(i);
+      tile.appendChild(key);
+    }
+    // LIVE badge (top-right)
+    if (f.cssFilter) {
+      const live = document.createElement('span');
+      live.className = 'tile-live';
+      live.textContent = T('live_badge');
+      tile.appendChild(live);
+    }
+    // Active check overlay (top-right, shown when active)
+    const check = document.createElement('span');
+    check.className = 'tile-check';
+    check.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+    tile.appendChild(check);
+
+    // Text overlay at the bottom
     const text = document.createElement('div');
     text.className = 'tile-text';
     const name = document.createElement('span');
@@ -253,27 +286,6 @@ function buildFilterTiles() {
     desc.textContent = T(`f_${f.id}_d`);
     text.appendChild(desc);
     tile.appendChild(text);
-
-    // Thumbnail on the right
-    const thumb = document.createElement('div');
-    thumb.className = 'tile-thumb empty';
-    if (i >= 1 && i <= 9) {
-      const key = document.createElement('span');
-      key.className = 'tile-key';
-      key.textContent = String(i);
-      thumb.appendChild(key);
-    }
-    if (f.cssFilter) {
-      const live = document.createElement('span');
-      live.className = 'tile-live';
-      live.textContent = T('live_badge');
-      thumb.appendChild(live);
-    }
-    const check = document.createElement('span');
-    check.className = 'tile-check';
-    check.innerHTML = '<svg viewBox="0 0 24 24" width="10" height="10"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
-    thumb.appendChild(check);
-    tile.appendChild(thumb);
 
     tile.addEventListener('click', () => setActiveFilter(f.id));
     els.filtersGrid.appendChild(tile);
@@ -290,8 +302,9 @@ function buildCategoryTabs() {
     const c = f.category || 'stylize';
     counts[c] = (counts[c] || 0) + 1;
   }
+  const liveCount = list.filter((f) => !!f.cssFilter).length;
   CATEGORIES.forEach((cat) => {
-    if (cat !== 'all' && !counts[cat]) return; // skip empty cat
+    if (cat !== 'all' && cat !== 'live' && !counts[cat]) return; // skip empty cat
     const btn = document.createElement('button');
     btn.className = 'cat-tab' + (cat === state.activeCategory ? ' active' : '');
     btn.dataset.cat = cat;
@@ -301,10 +314,11 @@ function buildCategoryTabs() {
     btn.appendChild(label);
     const count = document.createElement('span');
     count.className = 'cat-count';
-    count.textContent = cat === 'all' ? list.length : (counts[cat] || 0);
+    count.textContent = cat === 'all' ? list.length : cat === 'live' ? liveCount : (counts[cat] || 0);
     btn.appendChild(count);
     btn.addEventListener('click', () => {
       state.activeCategory = cat;
+      state.filterPage = 0;
       // Just toggle the active class — no full rebuild.
       els.filterCats.querySelectorAll('.cat-tab').forEach((b) => {
         b.classList.toggle('active', b.dataset.cat === cat);
@@ -334,7 +348,10 @@ function refreshHeroCard() {
 }
 
 function setFilterTilesEnabled(enabled) {
-  els.filtersGrid.querySelectorAll('.filter-tile').forEach((b) => { b.disabled = !enabled; });
+  els.filtersGrid.querySelectorAll('.filter-tile').forEach((b) => {
+    if (enabled) b.removeAttribute('data-disabled');
+    else b.dataset.disabled = '1';
+  });
 }
 
 function setActiveFilter(id) {
@@ -343,21 +360,57 @@ function setActiveFilter(id) {
   applyFilterMode();
 }
 
+const PAGE_SIZE = 8;
+
 function applyFilterVisibility() {
   const q = (els.filterSearch.value || '').trim().toLowerCase();
   const cat = state.activeCategory;
-  els.filtersGrid.querySelectorAll('.filter-tile').forEach((tile) => {
+  const tiles = Array.from(els.filtersGrid.querySelectorAll('.filter-tile'));
+  const matched = [];
+  tiles.forEach((tile) => {
     const id = tile.dataset.filterId;
     const tcat = tile.dataset.category;
+    const isLive = tile.dataset.live === '1';
     let visible = true;
-    if (cat !== 'all' && tcat !== cat) visible = false;
+    if (cat === 'live') {
+      if (!isLive) visible = false;
+    } else if (cat !== 'all' && tcat !== cat) {
+      visible = false;
+    }
     if (q) {
       const name = T(`f_${id}_n`).toLowerCase();
       const desc = T(`f_${id}_d`).toLowerCase();
       if (!(name.includes(q) || desc.includes(q) || id.includes(q))) visible = false;
     }
-    tile.style.display = visible ? '' : 'none';
+    tile.dataset.matched = visible ? '1' : '0';
+    if (visible) matched.push(tile);
   });
+  const totalPages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+  if (state.filterPage >= totalPages) state.filterPage = totalPages - 1;
+  if (state.filterPage < 0) state.filterPage = 0;
+  const start = state.filterPage * PAGE_SIZE;
+  const end = start + PAGE_SIZE;
+  tiles.forEach((tile) => { tile.style.display = 'none'; });
+  matched.slice(start, end).forEach((tile) => { tile.style.display = ''; });
+  updatePager(matched.length, totalPages);
+}
+
+function updatePager(matchedCount, totalPages) {
+  if (!els.filtersPager) return;
+  if (matchedCount <= PAGE_SIZE) {
+    els.filtersPager.hidden = true;
+    return;
+  }
+  els.filtersPager.hidden = false;
+  els.pagerInfo.textContent = `${state.filterPage + 1} / ${totalPages}`;
+  els.pagerPrev.disabled = state.filterPage <= 0;
+  els.pagerNext.disabled = state.filterPage >= totalPages - 1;
+}
+
+function changeFilterPage(delta) {
+  state.filterPage += delta;
+  applyFilterVisibility();
+  els.filtersGrid.scrollTop = 0;
 }
 
 // (kept for backward compat with i18n change handler)
@@ -391,7 +444,13 @@ async function regenerateFilterThumbnails() {
   base.width = W; base.height = H;
   const bctx = base.getContext('2d', { willReadFrequently: true });
   bctx.drawImage(v, 0, 0, W, H);
-  const baseData = bctx.getImageData(0, 0, W, H);
+  let baseData;
+  try {
+    baseData = bctx.getImageData(0, 0, W, H);
+  } catch (e) {
+    console.error('[VFS] getImageData failed:', e);
+    return;
+  }
 
   const tiles = els.filtersGrid.querySelectorAll('.filter-tile');
   for (const tile of tiles) {
@@ -403,13 +462,15 @@ async function regenerateFilterThumbnails() {
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     c.getContext('2d').putImageData(out, 0, 0);
-    const url = c.toDataURL('image/jpeg', 0.6);
-    state.tileThumbs.set(id, url);
+    c.className = 'tile-thumb-canvas';
     const thumb = tile.querySelector('.tile-thumb');
     if (thumb) {
       thumb.classList.remove('empty');
-      thumb.style.backgroundImage = `url("${url}")`;
+      const prev = thumb.querySelector('.tile-thumb-canvas');
+      if (prev) prev.remove();
+      thumb.appendChild(c);
     }
+    state.tileThumbs.set(id, c);
     await new Promise((r) => setTimeout(r, 0));
   }
 }
@@ -519,7 +580,8 @@ async function loadVideoFile(filePath) {
     // Reset all filter tile thumbnails to "empty" state.
     els.filtersGrid.querySelectorAll('.tile-thumb').forEach((t) => {
       t.classList.add('empty');
-      t.style.backgroundImage = '';
+      const canvas = t.querySelector('.tile-thumb-canvas');
+      if (canvas) canvas.remove();
     });
 
     state.videoPath = filePath;
@@ -557,10 +619,23 @@ async function loadVideoFile(filePath) {
     hideProgress();
 
     // Schedule filter thumbnails after the first frame is decoded.
-    // Using `once: true` ensures we don't accumulate listeners on repeated loads.
-    els.videoEl.addEventListener('loadeddata', () => {
+    // readyState >= 2 (HAVE_CURRENT_DATA) means a frame is already available.
+    const triggerThumbs = () => {
+      // Guard: only run once per load.
+      if (triggerThumbs._done) return;
+      triggerThumbs._done = true;
       regenerateFilterThumbnails();
-    }, { once: true });
+    };
+    if (els.videoEl.readyState >= 2 && els.videoEl.videoWidth > 0) {
+      triggerThumbs();
+    } else {
+      els.videoEl.addEventListener('loadeddata', triggerThumbs, { once: true });
+      els.videoEl.addEventListener('canplay', triggerThumbs, { once: true });
+      // Belt-and-suspenders: in case neither event fires on some codec paths.
+      setTimeout(() => {
+        if (els.videoEl.readyState >= 2 && els.videoEl.videoWidth > 0) triggerThumbs();
+      }, 800);
+    }
   } catch (e) {
     hideProgress();
     showToast(T('toast_probe_failed', { msg: e.message }), true);
@@ -1632,6 +1707,7 @@ function init() {
 
   buildFilterTiles();
   buildCategoryTabs();
+  applyFilterVisibility();
   buildLangSelect();
   applyLocalization();
   bindDragDrop();
@@ -1739,7 +1815,14 @@ function init() {
   els.filterStrength.style.setProperty('--strength', '100%');
 
   // Filter search
-  els.filterSearch.addEventListener('input', applyFilterVisibility);
+  els.filterSearch.addEventListener('input', () => {
+    state.filterPage = 0;
+    applyFilterVisibility();
+  });
+
+  // Pager
+  if (els.pagerPrev) els.pagerPrev.addEventListener('click', () => changeFilterPage(-1));
+  if (els.pagerNext) els.pagerNext.addEventListener('click', () => changeFilterPage(1));
 
   // Video events
   const v = els.videoEl;
