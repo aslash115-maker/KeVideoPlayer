@@ -909,7 +909,8 @@ html[dir="rtl"] .tile-live, html[dir="rtl"] .tile-check { right: auto; left: 4px
 }
 #btnExtractAudio { margin-left: auto; }
 html[dir="rtl"] #btnExtractAudio { margin-left: 0; margin-right: auto; }
-.audio-field select {
+.audio-field select,
+#optEnhance {
   padding: 4px 8px; border-radius: 5px;
   border: 1px solid #2a2e36;
   background: #1a1d23; color: #e6e8ea;
@@ -917,8 +918,15 @@ html[dir="rtl"] #btnExtractAudio { margin-left: 0; margin-right: auto; }
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
 }
-.audio-field select:hover { border-color: #3a4150; }
-.audio-field select:focus { border-color: #6c5ce7; background: #1d2027; }
+.audio-field select:hover,
+#optEnhance:hover { border-color: #3a4150; }
+.audio-field select:focus,
+#optEnhance:focus { border-color: #6c5ce7; background: #1d2027; }
+/* Enhancement is the costly option — tint it when active so the slowdown is
+   never a surprise. */
+#optEnhance:not([data-level="off"]) {
+  border-color: #6c5ce7; color: #c9c2ff;
+}
 
 /* ---------- modal ---------- */
 .modal {

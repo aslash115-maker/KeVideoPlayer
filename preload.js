@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('api', {
   readFrame: (framePath) => ipcRenderer.invoke('frame:read', framePath),
   saveOriginalFrame: (args) => ipcRenderer.invoke('frame:saveOriginal', args),
   savePngFromBase64: (args) => ipcRenderer.invoke('frame:savePngFromBase64', args),
+  // Re-decode one frame from the source video with a restoration chain applied.
+  exportEnhancedFrame: (args) => ipcRenderer.invoke('frame:exportEnhanced', args),
   revealItem: (p) => ipcRenderer.invoke('shell:revealItem', p),
   cleanupSession: (id) => ipcRenderer.invoke('session:cleanup', id),
   openManual: () => ipcRenderer.invoke('manual:open'),

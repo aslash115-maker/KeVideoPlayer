@@ -19,6 +19,7 @@ const els = {
   optFps: $('optFps'),
   optMax: $('optMax'),
   optQuality: $('optQuality'),
+  optEnhance: $('optEnhance'),
   optAudioFormat: $('optAudioFormat'),
   btnExtractAudio: $('btnExtractAudio'),
   // welcome / drop
@@ -83,6 +84,7 @@ const els = {
   filmstrip: $('filmstrip'),
   // actions
   btnExportFiltered: $('btnExportFiltered'),
+  btnExportEnhanced: $('btnExportEnhanced'),
   btnExportOriginal: $('btnExportOriginal'),
   btnReset: $('btnReset'),
   // filters pane
@@ -884,6 +886,7 @@ async function loadVideoFile(filePath) {
     setFilterTilesEnabled(true);
     els.btnExportFiltered.disabled = false;
     els.btnExportOriginal.disabled = false;
+    if (els.btnExportEnhanced) els.btnExportEnhanced.disabled = false;
     els.btnReset.disabled = false;
 
     els.body.classList.remove('state-welcome');
@@ -1090,6 +1093,42 @@ async function exportFiltered() {
     if (!r.canceled) showToast(T('toast_save_ok', { path: r.path }));
   } catch (e) { showToast(T('toast_save_failed', { msg: e.message }), true); }
   finally { els.btnExportFiltered.disabled = false; }
+}
+
+// Export the current frame with an ffmpeg restoration chain applied.
+// The work happens in main, re-decoding the source video at this timestamp, so
+// the chain sees the original pixels rather than an already-compressed frame.
+// The "fine" tier is only offered here (it is far too slow for a whole batch).
+async function exportEnhanced() {
+  if (!state.hasVideo || !els.btnExportEnhanced || els.btnExportEnhanced.disabled) return;
+  // Fall back to the strongest tier when extraction is set to "off" — asking
+  // for an enhanced export while "off" is selected should still do something.
+  const picked = els.optEnhance ? els.optEnhance.value : 'off';
+  const tier = picked === 'off' ? 'fine' : picked;
+
+  els.btnExportEnhanced.disabled = true;
+  const t = els.videoEl.currentTime || 0;
+  const cur = Math.round(t * state.fps);
+  const baseName = (state.videoPath || 'video').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+  const suggested = `${baseName}_${String(cur).padStart(6, '0')}_${tier}.png`;
+
+  showProgress(T('enhancing', { tier: T(`enhance_${tier}`) }));
+  try {
+    const r = await window.api.exportEnhancedFrame({
+      filePath: state.videoPath,
+      timeSec: t,
+      enhance: tier,
+      dialogTitle: T('dialog_save_enhanced_title'),
+      suggestedName: suggested,
+      filterPngLabel: T('filter_png'),
+    });
+    if (!r.canceled) showToast(T('toast_save_ok', { path: r.path }));
+  } catch (e) {
+    showToast(T('toast_save_failed', { msg: e.message }), true);
+  } finally {
+    hideProgress();
+    els.btnExportEnhanced.disabled = !state.hasVideo;
+  }
 }
 
 // Snapshot the current video frame to PNG and prompt for save location.
@@ -1568,17 +1607,26 @@ async function extractFrames() {
   const targetFps = Math.max(0, parseFloat(els.optFps.value) || 0);
   const maxFrames = Math.max(0, parseInt(els.optMax.value, 10) || 0);
   const quality = Math.max(2, Math.min(31, parseInt(els.optQuality.value, 10) || 3));
+  const enhance = els.optEnhance ? els.optEnhance.value : 'off';
 
   // Remember the rate at which frames were extracted so we can map index ↔ time later.
   state.extractFps = targetFps > 0 ? targetFps : (state.fps || 30);
 
-  showProgress(T('extracting', { n: 0 }));
+  // With enhancement on, extraction is an order of magnitude slower — say so,
+  // otherwise the longer wait looks like a hang.
+  const enhancing = enhance && enhance !== 'off';
+  const progressKey = enhancing ? 'extracting_enhanced' : 'extracting';
+  const progressVars = (n) => (enhancing
+    ? { n, tier: T(`enhance_${enhance}`) }
+    : { n });
+
+  showProgress(T(progressKey, progressVars(0)));
   const off = window.api.onProgress(({ framesDone }) => {
-    els.progressText.textContent = T('extracting', { n: framesDone });
+    els.progressText.textContent = T(progressKey, progressVars(framesDone));
   });
   try {
     const result = await window.api.extractFrames({
-      filePath: state.videoPath, targetFps, maxFrames, quality,
+      filePath: state.videoPath, targetFps, maxFrames, quality, enhance,
     });
     state.sessionId = result.sessionId;
     state.frames = result.frames;
@@ -1989,6 +2037,16 @@ function init() {
   // Exports / reset
   els.btnExportOriginal.addEventListener('click', exportOriginal);
   els.btnExportFiltered.addEventListener('click', exportFiltered);
+  if (els.btnExportEnhanced) els.btnExportEnhanced.addEventListener('click', exportEnhanced);
+  // Mirror the enhancement tier onto the element so CSS can flag the costly
+  // settings, and keep it in sync with the initial value.
+  if (els.optEnhance) {
+    const syncEnhanceLevel = () => {
+      els.optEnhance.dataset.level = els.optEnhance.value;
+    };
+    els.optEnhance.addEventListener('change', syncEnhanceLevel);
+    syncEnhanceLevel();
+  }
   els.btnReset.addEventListener('click', () => setActiveFilter('original'));
 
   // Transport

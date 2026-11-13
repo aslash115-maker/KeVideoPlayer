@@ -216,6 +216,14 @@
             </label>
           </div>
           <span id="extractStatus" class="extract-status muted"></span>
+          <label class="extract-field">
+            <span data-i18n="opt_enhance">Enhance</span>
+            <select id="optEnhance" data-i18n-title="opt_enhance_title" title="Clarity enhancement">
+              <option value="off" selected data-i18n="enhance_off">Off</option>
+              <option value="light" data-i18n="enhance_light">Light</option>
+              <option value="standard" data-i18n="enhance_standard">Standard</option>
+            </select>
+          </label>
           <label class="extract-field audio-field">
             <span data-i18n="opt_audio_format">Audio format</span>
             <select id="optAudioFormat" data-i18n-title="opt_audio_format_title" title="Audio format">
@@ -276,6 +284,9 @@
       <!-- Sticky export footer -->
       <div class="filters-footer">
         <button id="btnExportFiltered" class="btn primary" disabled data-i18n="btn_export_filtered">Export Filtered (PNG)</button>
+        <button id="btnExportEnhanced" class="btn" disabled data-i18n-title="btn_export_enhanced" title="Export enhanced frame">
+          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2 9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5zM19 3l-.9 2.6L15.5 6.5l2.6.9L19 10l.9-2.6L22.5 6.5l-2.6-.9z"/></svg>
+        </button>
         <button id="btnExportOriginal" class="btn" disabled data-i18n-title="btn_export_original" title="Export original">
           <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg>
         </button>

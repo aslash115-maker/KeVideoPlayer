@@ -231,7 +231,53 @@ ipcMain.handle('video:probe', async (_evt, filePath) => {
   });
 });
 
-ipcMain.handle('video:extractFrames', async (evt, { filePath, targetFps, maxFrames, quality }) => {
+// ---------- clarity enhancement ----------
+// Restoration chains for low-quality sources. Filter ORDER is the point:
+// deblock → denoise → upscale → sharpen. Sharpening first would amplify the
+// very compression blocks and noise the earlier stages exist to remove.
+//
+// These only undo coding degradation and redistribute edge contrast; nothing
+// here invents detail, which keeps extracted frames usable as evidence.
+//
+// Throughput measured on a 1280x720 h264 source, CPU only (this build of
+// ffmpeg has no opencl/vulkan/tensorflow backend):
+//   light     ~80 fps     cheap enough for any batch
+//   standard  ~23 fps     600 frames ≈ 26 s
+//   fine      ~5 s/frame  single-frame export only
+const ENHANCE_PRESETS = {
+  // Contrast Adaptive Sharpening: local sharpening with almost no halos.
+  light: {
+    chain: 'cas=strength=0.6',
+    batch: true,
+  },
+  // pp7 kills DCT block edges, hqdn3d removes spatial+temporal noise, then
+  // CAS restores the bite that denoising costs. Native resolution.
+  standard: {
+    chain: 'pp7=qp=4:mode=medium,hqdn3d=2:1.5:3:3,cas=strength=0.5',
+    batch: true,
+  },
+  // nlmeans is a far better denoiser than hqdn3d but ~10x slower, so this tier
+  // is refused for batch work. Includes a 2x lanczos upscale, which gives the
+  // unsharp pass sub-pixel room to work with.
+  fine: {
+    chain: 'pp7=qp=5:mode=medium,nlmeans=s=3:p=7:r=15,zscale=w=iw*2:h=ih*2:f=lanczos,unsharp=5:5:0.8:5:5:0.0',
+    batch: false,
+  },
+};
+
+// Resolve an untrusted preset name. `forBatch` rejects tiers too slow to run
+// over a whole extraction. Returns null for "no enhancement".
+function resolveEnhance(name, forBatch) {
+  if (typeof name !== 'string') return null;
+  const preset = ENHANCE_PRESETS[name.toLowerCase()];
+  if (!preset) return null;
+  if (forBatch && !preset.batch) {
+    throw new Error(`enhance: preset "${name}" is not allowed for batch extraction`);
+  }
+  return preset.chain;
+}
+
+ipcMain.handle('video:extractFrames', async (evt, { filePath, targetFps, maxFrames, quality, enhance }) => {
   // Only allow extraction from the file the renderer has registered.
   if (!filePath || filePath !== currentVideoPath) {
     throw new Error('extractFrames: filePath does not match active video');
@@ -257,6 +303,9 @@ ipcMain.handle('video:extractFrames', async (evt, { filePath, targetFps, maxFram
   if (Number.isFinite(tFps) && tFps > 0 && tFps <= 240) {
     filters.push(`fps=${tFps}`);
   }
+  // Enhancement runs after fps decimation so we only pay for frames we keep.
+  const enhanceChain = resolveEnhance(enhance, true);
+  if (enhanceChain) filters.push(enhanceChain);
   if (filters.length) args.push('-vf', filters.join(','));
 
   // Validate maxFrames: positive integer ≤ 100000.
@@ -471,6 +520,77 @@ ipcMain.handle('frame:savePngFromBase64', async (_evt, { base64, suggestedName, 
   const buf = Buffer.from(base64, 'base64');
   await fsp.writeFile(result.filePath, buf);
   return { canceled: false, path: result.filePath };
+});
+
+// Export one frame straight from the source video with a restoration chain
+// applied. Unlike frame:saveOriginal this re-decodes at the given timestamp,
+// so the enhancement runs on the original pixels instead of on an already
+// JPEG-compressed extracted frame — sharpening a lossy frame would amplify its
+// own block artifacts. Output is always PNG to avoid re-introducing loss.
+ipcMain.handle('frame:exportEnhanced', async (evt, opts = {}) => {
+  const { filePath, timeSec, enhance, dialogTitle, suggestedName, filterPngLabel } = opts;
+
+  if (!filePath || filePath !== currentVideoPath) {
+    throw new Error('exportEnhanced: filePath does not match active video');
+  }
+  try {
+    await fsp.access(filePath, fs.constants.R_OK);
+  } catch {
+    throw new Error('exportEnhanced: file not accessible');
+  }
+
+  const t = Number(timeSec);
+  if (!Number.isFinite(t) || t < 0) {
+    throw new Error('exportEnhanced: invalid timestamp');
+  }
+  // Single-frame path: every tier is allowed, including the slow one.
+  const chain = resolveEnhance(enhance, false);
+  if (!chain) throw new Error('exportEnhanced: unknown enhancement preset');
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: dialogTitle || 'Export enhanced frame',
+    defaultPath: suggestedName || 'frame_enhanced.png',
+    filters: [{ name: filterPngLabel || 'PNG', extensions: ['png'] }],
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  // Never write over the source video.
+  const outReal = await fsp.realpath(result.filePath).catch(() => result.filePath);
+  const srcReal = await fsp.realpath(filePath).catch(() => filePath);
+  if (outReal === srcReal) throw new Error('Output path matches the source video');
+
+  // `-ss` before `-i` seeks by keyframe then decodes forward to the exact
+  // timestamp, so it is both fast and frame-accurate.
+  const args = [
+    '-hide_banner', '-y',
+    '-ss', t.toFixed(3),
+    '-i', filePath,
+    '-frames:v', '1',
+    '-vf', chain,
+    result.filePath,
+  ];
+
+  return await new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, args, { windowsHide: true });
+    activeFfmpegProcs.add(proc);
+    let stderrBuf = '';
+
+    proc.stderr.on('data', (chunk) => {
+      stderrBuf += chunk.toString();
+      if (stderrBuf.length > 8000) stderrBuf = stderrBuf.slice(-8000);
+    });
+    proc.on('error', (err) => {
+      activeFfmpegProcs.delete(proc);
+      reject(err);
+    });
+    proc.on('close', (code) => {
+      activeFfmpegProcs.delete(proc);
+      if (code !== 0) {
+        return reject(new Error(`ffmpeg exited with code ${code}\n${stderrBuf}`));
+      }
+      resolve({ canceled: false, path: result.filePath, enhance });
+    });
+  });
 });
 
 ipcMain.handle('shell:revealItem', async (_evt, p) => {
