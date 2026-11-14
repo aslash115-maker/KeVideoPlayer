@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --enable-logging",
+    "icon": "node tools/make-icon.js",
     "dist": "electron-builder --win portable --x64"
   },
   "author": "",
@@ -30,6 +31,7 @@
       "preload.js",
       "renderer/**/*",
       "docs/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "asarUnpack": [
@@ -37,6 +39,7 @@
       "node_modules/ffprobe-static/**"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "portable",

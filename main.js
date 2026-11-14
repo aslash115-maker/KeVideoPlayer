@@ -17,6 +17,11 @@ const sessions = new Map();
 let currentVideoPath = null; // path the renderer is allowed to stream
 const activeFfmpegProcs = new Set(); // track running ffmpeg children for cleanup
 
+// Window icon. The packaged exe gets its icon from build.win.icon (the .ico);
+// this PNG is what the running window, taskbar and alt-tab use, and it also
+// makes the icon visible during `npm start`. Regenerate both with `npm run icon`.
+const APP_ICON = path.join(__dirname, 'build', 'icon.png');
+
 // Register a privileged 'vfs' scheme so renderer can stream the picked file
 // without exposing arbitrary disk access via file://. We map vfs://video to the
 // currently selected video file (set after the user picks one).
@@ -41,6 +46,7 @@ function createWindow() {
     minWidth: 1200,
     minHeight: 720,
     backgroundColor: '#1b1d22',
+    icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -610,6 +616,7 @@ ipcMain.handle('manual:open', async () => {
     minHeight: 600,
     backgroundColor: '#0e1014',
     title: 'Video Frame Studio · Manual',
+    icon: APP_ICON,
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
