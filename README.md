@@ -10,6 +10,7 @@ An Electron app that extracts every frame from a video, lets you preview each fr
 - 🎨 33 filters spanning color grading, stylization, distortion, blur, edge, and pop-culture looks
 - 🎚️ Strength slider (0–100%) that smoothly blends filter ↔ original
 - 💾 Export the original frame or the filtered preview (PNG)
+- ▶️ Auto-play on open/drop — a newly loaded video starts playing as soon as it's ready, and the transport play/pause icons stay in sync
 
 ## Filter list
 

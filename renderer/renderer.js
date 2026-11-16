@@ -5,6 +5,20 @@
 const $ = (id) => document.getElementById(id);
 const T = (k, v) => window.VFSi18n.t(k, v);
 
+// Reliable show/hide for inline <svg> icons. Setting `.hidden` on an SVGElement
+// does not reliably reflect to the [hidden] attribute in this Chromium build,
+// so toggle the attribute explicitly (and force display as a belt-and-braces).
+function setHidden(el, hidden) {
+  if (!el) return;
+  if (hidden) {
+    el.setAttribute('hidden', '');
+    el.style.display = 'none';
+  } else {
+    el.removeAttribute('hidden');
+    el.style.display = '';
+  }
+}
+
 const els = {
   body: document.body,
   // top
@@ -835,6 +849,41 @@ function bindTimelineHover() {
 }
 
 // ---------- video lifecycle ----------
+// Token guards against overlapping loads: if a second video is opened before
+// the first becomes ready, the stale pending auto-play is ignored.
+let autoPlayToken = 0;
+
+function autoPlayWhenReady() {
+  const myToken = ++autoPlayToken;
+  const v = els.videoEl;
+
+  const tryPlay = () => {
+    if (myToken !== autoPlayToken || !state.hasVideo) return;
+    // A pixel-only filter leaves the stage in canvas-mode showing a static
+    // snapshot; playing underneath it would look frozen. Drop back to the live
+    // video layer so playback is actually visible.
+    const f = window.VFSFilters.get(state.activeFilterId);
+    if (f && !f.cssFilter && state.activeFilterId !== 'original') {
+      els.body.classList.remove('canvas-mode');
+      els.videoEl.style.filter = '';
+    }
+    v.play().catch(() => {});
+  };
+
+  // readyState >= 2 (HAVE_CURRENT_DATA): a frame is decoded, safe to play now.
+  if (v.readyState >= 2) {
+    tryPlay();
+  } else {
+    const onReady = () => {
+      v.removeEventListener('loadeddata', onReady);
+      v.removeEventListener('canplay', onReady);
+      tryPlay();
+    };
+    v.addEventListener('loadeddata', onReady, { once: true });
+    v.addEventListener('canplay', onReady, { once: true });
+  }
+}
+
 async function loadVideoFile(filePath) {
   try {
     // Clean up any prior video state.
@@ -896,6 +945,12 @@ async function loadVideoFile(filePath) {
 
     // Build filter thumbnails as soon as the decoder yields a real frame.
     scheduleFilterThumbnails();
+
+    // Auto-play once the new video can actually start. Calling play() right
+    // after load() can be dropped while the media is still opening, so wait for
+    // readiness. The 'play' event handler flips the transport icons to the
+    // pause state, so this also keeps the play/pause button in sync.
+    autoPlayWhenReady();
   } catch (e) {
     hideProgress();
     showToast(T('toast_probe_failed', { msg: e.message }), true);
@@ -972,8 +1027,8 @@ function setVolume(v) {
 }
 function updateVolumeUI() {
   const muted = els.videoEl.muted || els.videoEl.volume === 0;
-  els.iconVol.hidden = muted;
-  els.iconMute.hidden = !muted;
+  setHidden(els.iconVol, muted);
+  setHidden(els.iconMute, !muted);
   const pct = Math.round((els.videoEl.muted ? 0 : els.videoEl.volume) * 100);
   els.volumeSlider.value = String(pct);
   els.volumeSlider.style.setProperty('--vol', `${pct}%`);
@@ -2151,11 +2206,11 @@ function init() {
     syncDoodleCanvasSize();
   });
   v.addEventListener('play', () => {
-    els.iconPlay.hidden = true;
-    els.iconPause.hidden = false;
+    setHidden(els.iconPlay, true);
+    setHidden(els.iconPause, false);
     els.btnPlayPause.title = T('pause_title');
-    if (els.iconTopPlay) els.iconTopPlay.hidden = true;
-    if (els.iconTopPause) els.iconTopPause.hidden = false;
+    setHidden(els.iconTopPlay, true);
+    setHidden(els.iconTopPause, false);
     if (els.btnTopPlayPause) els.btnTopPlayPause.title = T('pause_title');
     if (els.topPlayState) els.topPlayState.textContent = T('state_playing');
     // Doodle is paused-only; auto-exit on play.
@@ -2163,11 +2218,11 @@ function init() {
     startThumbLoop();
   });
   v.addEventListener('pause', () => {
-    els.iconPlay.hidden = false;
-    els.iconPause.hidden = true;
+    setHidden(els.iconPlay, false);
+    setHidden(els.iconPause, true);
     els.btnPlayPause.title = T('play_title');
-    if (els.iconTopPlay) els.iconTopPlay.hidden = false;
-    if (els.iconTopPause) els.iconTopPause.hidden = true;
+    setHidden(els.iconTopPlay, false);
+    setHidden(els.iconTopPause, true);
     if (els.btnTopPlayPause) els.btnTopPlayPause.title = T('play_title');
     if (els.topPlayState) els.topPlayState.textContent = T('state_paused');
     const f = window.VFSFilters.get(state.activeFilterId);
@@ -2227,8 +2282,8 @@ function init() {
   // Initial play state on load — sync top-bar.
   v.addEventListener('canplay', () => {
     if (v.paused) {
-      if (els.iconTopPlay) els.iconTopPlay.hidden = false;
-      if (els.iconTopPause) els.iconTopPause.hidden = true;
+      setHidden(els.iconTopPlay, false);
+      setHidden(els.iconTopPause, true);
       if (els.topPlayState) els.topPlayState.textContent = T('state_paused');
     }
   });
