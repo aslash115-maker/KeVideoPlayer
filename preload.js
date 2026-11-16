@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   pickVideo: (opts) => ipcRenderer.invoke('dialog:openVideo', opts),
+  pickFolder: (opts) => ipcRenderer.invoke('dialog:openFolder', opts),
+  listFolderVideos: (dir) => ipcRenderer.invoke('folder:listVideos', dir),
+  renameVideo: (args) => ipcRenderer.invoke('video:rename', args),
   probe: (filePath) => ipcRenderer.invoke('video:probe', filePath),
   extractFrames: (opts) => ipcRenderer.invoke('video:extractFrames', opts),
   extractAudio: (opts) => ipcRenderer.invoke('audio:extract', opts),

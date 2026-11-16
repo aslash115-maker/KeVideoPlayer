@@ -11,6 +11,9 @@ An Electron app that extracts every frame from a video, lets you preview each fr
 - 🎚️ Strength slider (0–100%) that smoothly blends filter ↔ original
 - 💾 Export the original frame or the filtered preview (PNG)
 - ▶️ Auto-play on open/drop — a newly loaded video starts playing as soon as it's ready, and the transport play/pause icons stay in sync
+- 📂 Open (or drop) a folder to build a playlist — recurses into subfolders, shown as a collapsible directory tree; click any item to switch, or let it auto-advance when the current clip ends
+- 🔀 Sequential or shuffle playback for the playlist
+- 🏷️ Per-video rating (C/B/A/S/SS/SSS/SSSS/SSSSS) — stored as a `_<rating>` suffix in the file name; picking a rating renames the file in place (overwriting any previous rating)
 
 ## Filter list
 
@@ -22,6 +25,8 @@ Original, Grayscale, Sepia, Invert, Brighten, Darken, Contrast, Saturate, Desatu
 npm install
 npm start
 ```
+
+On Windows you can also just double-click `start.bat` in the project root — it installs dependencies on first run, then launches the app.
 
 `ffmpeg-static` ships a prebuilt FFmpeg binary, so no separate install is needed.
 

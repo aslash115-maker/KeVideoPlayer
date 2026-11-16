@@ -49,6 +49,14 @@ Registered as a privileged scheme (`main.js:23-35`) with `stream: true`, `secure
 
 `api.extractAudio({filePath, format})` mirrors frame extraction but writes directly to a user-chosen path. Format presets (`mp3/wav/m4a/flac/ogg`) live in `FORMAT_PRESETS` (`main.js:327-333`). Refuses to overwrite the source video (compares `realpath` of both). Detects "no audio stream" via stderr regex so the error is meaningful.
 
+### Playlist (folder playback)
+
+`api.pickFolder()` / drag-dropping a directory → `api.listFolderVideos(dir)` walks the tree with `collectVideosRecursive` (depth-capped at 12; symlinked dirs report `isDirectory()` false so loops are skipped) and returns `{ path, name, dir }[]`, where `dir` is the posix-style subfolder path relative to the opened root. The renderer (`renderer.js`) groups items by `dir` into a collapsible tree (`state.collapsedDirs`), tracks the active index, auto-advances on the video `ended` event, and supports sequential or shuffle order. Dropping multiple files builds a flat playlist instead. The playlist shares the right pane with the filter grid via a tab switch (`switchPane`).
+
+### Rating (file rename)
+
+The topbar rating dropdown (C/B/A/S/SS/SSS/SSSS/SSSSS, default None) reflects/sets a `_<rating>` suffix on the active file's name, parsed via `RATING_RE`. Changing it calls `api.renameVideo({oldPath, newName})` → `video:rename`, which **only** renames the current `currentVideoPath`, rejects names containing path separators / `..` or that collide with an existing file, renames within the same folder, and repoints `currentVideoPath` to the new path so the `vfs://` stream keeps working. The suffix is overwritten, never appended twice (`base.replace(RATING_RE, '') + '_' + rating`).
+
 ### Filters
 
 Each filter mutates and returns the same `ImageData` for speed, then `blendOriginal(imageData, originalData, t)` lerps toward the captured pre-filter pixels based on the strength slider. Convolution filters use the in-file `convolve3x3` helper. To add a filter, register via the internal `register(...)` calls in `filters.js` with `{category}` — it shows up automatically in the tile grid.

@@ -20,6 +20,20 @@
         <svg id="iconTopPause" viewBox="0 0 24 24" width="18" height="18" hidden><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
       </button>
       <span id="topPlayState" class="top-play-state muted" data-i18n="state_paused">Paused</span>
+      <label class="rating-picker" data-i18n-title="rating_label" title="Rating">
+        <span class="rating-label" data-i18n="rating_label">Rating</span>
+        <select id="ratingSelect" disabled>
+          <option value="" data-i18n="rating_none">None</option>
+          <option value="C">C</option>
+          <option value="B">B</option>
+          <option value="A">A</option>
+          <option value="S">S</option>
+          <option value="SS">SS</option>
+          <option value="SSS">SSS</option>
+          <option value="SSSS">SSSS</option>
+          <option value="SSSSS">SSSSS</option>
+        </select>
+      </label>
       <button id="btnDoodle" class="btn" disabled data-i18n="btn_doodle">Doodle</button>
       <button id="btnSnapshot" class="btn" disabled data-i18n="btn_snapshot">Snapshot Frame</button>
       <span class="topbar-sep"></span>
@@ -32,6 +46,10 @@
       <label class="lang-picker">
         <select id="langSelect" data-i18n-title="lang_label" title="Language"></select>
       </label>
+      <button id="btnPlaylist" class="icon-btn" hidden data-i18n-title="playlist_toggle" title="Playlist">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9h12v2H3V9zm0-4h12v2H3V5zm0 8h8v2H3v-2zm12 .5v6l5-3-5-3z"/></svg>
+      </button>
+      <button id="btnPickFolder" class="btn" data-i18n="btn_open_folder">Open Folder…</button>
       <button id="btnPick" class="btn primary" data-i18n="btn_open">Open Video…</button>
     </div>
   </header>
@@ -243,53 +261,79 @@
       </div>
     </section>
 
-    <!-- Right pane: filter grid -->
+    <!-- Right pane: tabbed filters / playlist -->
     <aside class="filters-pane">
-      <!-- Sticky hero card showing the active filter + strength -->
-      <div class="filters-hero">
-        <div class="hero-row">
-          <div class="hero-text">
-            <div class="hero-name" id="heroName">—</div>
-            <div class="hero-desc" id="heroDesc"></div>
+      <!-- Tab switcher -->
+      <div class="pane-tabs">
+        <button id="tabFilters" class="pane-tab active" data-pane="filters" data-i18n="tab_filters">Filters</button>
+        <button id="tabPlaylist" class="pane-tab" data-pane="playlist" data-i18n="tab_playlist">Playlist</button>
+      </div>
+
+      <!-- Filters tab panel -->
+      <div id="filtersTab" class="pane-tab-panel">
+        <!-- Sticky hero card showing the active filter + strength -->
+        <div class="filters-hero">
+          <div class="hero-row">
+            <div class="hero-text">
+              <div class="hero-name" id="heroName">—</div>
+              <div class="hero-desc" id="heroDesc"></div>
+            </div>
+            <button id="btnReset" class="hero-reset" disabled data-i18n-title="btn_reset" title="Reset">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
           </div>
-          <button id="btnReset" class="hero-reset" disabled data-i18n-title="btn_reset" title="Reset">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          <div class="hero-strength">
+            <input id="filterStrength" type="range" min="0" max="100" value="100" />
+            <span id="filterStrengthVal">100%</span>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="filter-search-row">
+          <svg viewBox="0 0 24 24" width="14" height="14" class="search-icon"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 5 1.49-1.5-5-4.99zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+          <input id="filterSearch" class="filter-search" type="search" placeholder="Search filters…" data-i18n-placeholder="filter_search_placeholder" />
+        </div>
+
+        <!-- Category tabs -->
+        <div class="filter-cats" id="filterCats"></div>
+
+        <!-- Filter grid (scrolls) -->
+        <div id="filtersGrid" class="filters-grid"></div>
+
+        <!-- Pager -->
+        <div id="filtersPager" class="filters-pager" hidden>
+          <button id="pagerPrev" class="pager-btn" data-i18n-title="pager_prev" title="Previous">‹</button>
+          <span id="pagerInfo" class="pager-info">1 / 1</span>
+          <button id="pagerNext" class="pager-btn" data-i18n-title="pager_next" title="Next">›</button>
+        </div>
+
+        <!-- Sticky export footer -->
+        <div class="filters-footer">
+          <button id="btnExportFiltered" class="btn primary" disabled data-i18n="btn_export_filtered">Export Filtered (PNG)</button>
+          <button id="btnExportEnhanced" class="btn" disabled data-i18n-title="btn_export_enhanced" title="Export enhanced frame">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2 9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5zM19 3l-.9 2.6L15.5 6.5l2.6.9L19 10l.9-2.6L22.5 6.5l-2.6-.9z"/></svg>
+          </button>
+          <button id="btnExportOriginal" class="btn" disabled data-i18n-title="btn_export_original" title="Export original">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg>
           </button>
         </div>
-        <div class="hero-strength">
-          <input id="filterStrength" type="range" min="0" max="100" value="100" />
-          <span id="filterStrengthVal">100%</span>
+      </div>
+
+      <!-- Playlist tab panel -->
+      <div id="playlistTab" class="pane-tab-panel" hidden>
+        <div class="playlist-head">
+          <span id="playlistCount" class="playlist-count muted"></span>
+          <span class="playlist-head-spacer"></span>
+          <button id="btnPlaylistShuffle" class="pl-btn" data-i18n-title="playlist_shuffle" title="Shuffle">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+          </button>
         </div>
-      </div>
-
-      <!-- Search -->
-      <div class="filter-search-row">
-        <svg viewBox="0 0 24 24" width="14" height="14" class="search-icon"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 5 1.49-1.5-5-4.99zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
-        <input id="filterSearch" class="filter-search" type="search" placeholder="Search filters…" data-i18n-placeholder="filter_search_placeholder" />
-      </div>
-
-      <!-- Category tabs -->
-      <div class="filter-cats" id="filterCats"></div>
-
-      <!-- Filter grid (scrolls) -->
-      <div id="filtersGrid" class="filters-grid"></div>
-
-      <!-- Pager -->
-      <div id="filtersPager" class="filters-pager" hidden>
-        <button id="pagerPrev" class="pager-btn" data-i18n-title="pager_prev" title="Previous">‹</button>
-        <span id="pagerInfo" class="pager-info">1 / 1</span>
-        <button id="pagerNext" class="pager-btn" data-i18n-title="pager_next" title="Next">›</button>
-      </div>
-
-      <!-- Sticky export footer -->
-      <div class="filters-footer">
-        <button id="btnExportFiltered" class="btn primary" disabled data-i18n="btn_export_filtered">Export Filtered (PNG)</button>
-        <button id="btnExportEnhanced" class="btn" disabled data-i18n-title="btn_export_enhanced" title="Export enhanced frame">
-          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 2 9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5zM19 3l-.9 2.6L15.5 6.5l2.6.9L19 10l.9-2.6L22.5 6.5l-2.6-.9z"/></svg>
-        </button>
-        <button id="btnExportOriginal" class="btn" disabled data-i18n-title="btn_export_original" title="Export original">
-          <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67 2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2v9.67z"/></svg>
-        </button>
+        <div class="playlist-nav">
+          <button id="btnPlaylistPrev" class="btn ghost" data-i18n="playlist_prev">Previous</button>
+          <button id="btnPlaylistNext" class="btn ghost" data-i18n="playlist_next">Next</button>
+        </div>
+        <div id="playlistItems" class="playlist-items"></div>
+        <div id="playlistEmpty" class="playlist-empty muted" data-i18n="playlist_empty">Open a folder to build a playlist.</div>
       </div>
     </aside>
   </main>

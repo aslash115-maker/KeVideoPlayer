@@ -23,6 +23,21 @@ const els = {
   body: document.body,
   // top
   btnPick: $('btnPick'),
+  btnPickFolder: $('btnPickFolder'),
+  btnPlaylist: $('btnPlaylist'),
+  ratingSelect: $('ratingSelect'),
+  // right pane tabs
+  tabFilters: $('tabFilters'),
+  tabPlaylist: $('tabPlaylist'),
+  filtersTab: $('filtersTab'),
+  playlistTab: $('playlistTab'),
+  // playlist
+  playlistItems: $('playlistItems'),
+  playlistCount: $('playlistCount'),
+  playlistEmpty: $('playlistEmpty'),
+  btnPlaylistShuffle: $('btnPlaylistShuffle'),
+  btnPlaylistPrev: $('btnPlaylistPrev'),
+  btnPlaylistNext: $('btnPlaylistNext'),
   btnExtract: $('btnExtract'),
   extractStatus: $('extractStatus'),
   btnHelp: $('btnHelp'),
@@ -151,6 +166,11 @@ const state = {
   doodleSize: 4,
   doodleFontSize: 24, // canvas-pixel font size for the text tool
   doodleStrokes: [], // each: {type:'stroke', color, size, points:[{x,y},...]} or {type:'text', x,y,text,color,size}
+  // ---- playlist ----
+  playlist: [],       // [{ path, name, dir }]
+  playlistIndex: -1,  // index of the currently playing item, -1 if none
+  shuffle: false,     // false = sequential, true = random
+  collapsedDirs: new Set(), // relative dir paths currently collapsed in the list
 };
 
 const CATEGORIES = ['live', 'all', 'basic', 'color', 'bw', 'stylize', 'blur', 'distort', 'mood'];
@@ -940,6 +960,8 @@ async function loadVideoFile(filePath) {
 
     els.body.classList.remove('state-welcome');
     els.stageTitlebar.textContent = filePath.split(/[\\/]/).pop();
+    els.ratingSelect.disabled = false;
+    syncRatingUI();
     applyFilterMode();
     hideProgress();
 
@@ -964,7 +986,237 @@ async function pickVideo() {
     filterAllLabel: T('filter_all'),
   });
   if (!p) return;
+  // A lone picked file clears any active playlist.
+  clearPlaylist();
   await loadVideoFile(p);
+}
+
+// ---------- playlist ----------
+async function pickFolder() {
+  const dir = await window.api.pickFolder({ dialogTitle: T('dialog_open_folder_title') });
+  if (!dir) return;
+  const vids = await window.api.listFolderVideos(dir);
+  if (!vids || vids.length === 0) {
+    showToast(T('toast_folder_empty'), true);
+    return;
+  }
+  setPlaylist(vids, 0);
+}
+
+// Replace the playlist and start from startIndex.
+function setPlaylist(items, startIndex) {
+  state.playlist = items.slice();
+  state.playlistIndex = -1;
+  state.collapsedDirs.clear();
+  renderPlaylist();
+  els.btnPlaylist.hidden = state.playlist.length === 0;
+  // Reveal the playlist tab when more than one item is loaded.
+  if (state.playlist.length > 1) switchPane('playlist');
+  playPlaylistIndex(startIndex);
+}
+
+function clearPlaylist() {
+  state.playlist = [];
+  state.playlistIndex = -1;
+  renderPlaylist();
+  els.btnPlaylist.hidden = true;
+  switchPane('filters');
+}
+
+// A node is hidden when any of its ancestor directories is collapsed.
+// `ancestorLevels` = number of parent dir levels to test (prefix lengths 1..n).
+function hiddenByCollapsedAncestor(segs, ancestorLevels) {
+  for (let k = 1; k <= ancestorLevels; k++) {
+    if (state.collapsedDirs.has(segs.slice(0, k).join('/'))) return true;
+  }
+  return false;
+}
+
+function renderPlaylist() {
+  const frag = document.createDocumentFragment();
+  // Emit a directory header whenever the subfolder path changes, including any
+  // intermediate levels not yet shown, so the tree hierarchy is visible.
+  let lastSegs = [];
+  state.playlist.forEach((item, i) => {
+    const segs = item.dir ? item.dir.split('/') : [];
+    // Longest common prefix with the previously shown directory path.
+    let common = 0;
+    while (common < segs.length && common < lastSegs.length && segs[common] === lastSegs[common]) common++;
+    for (let d = common; d < segs.length; d++) {
+      const fullPath = segs.slice(0, d + 1).join('/');
+      // Skip this header if a higher-level ancestor is collapsed.
+      if (hiddenByCollapsedAncestor(segs, d)) continue;
+      const collapsed = state.collapsedDirs.has(fullPath);
+      const header = document.createElement('div');
+      header.className = 'playlist-dir';
+      header.dataset.dir = fullPath;
+      header.style.paddingLeft = `${10 + d * 14}px`;
+
+      const chev = document.createElement('span');
+      chev.className = 'pl-dir-chevron' + (collapsed ? ' collapsed' : '');
+      chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M8.5 5.5 15 12l-6.5 6.5V5.5z"/></svg>';
+
+      const ic = document.createElement('span');
+      ic.className = 'pl-dir-icon';
+      ic.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>';
+
+      const nm = document.createElement('span');
+      nm.className = 'pl-dir-name';
+      nm.textContent = segs[d];
+
+      header.append(chev, ic, nm);
+      frag.appendChild(header);
+    }
+    lastSegs = segs;
+
+    // Skip the file row if any ancestor directory is collapsed.
+    if (hiddenByCollapsedAncestor(segs, segs.length)) return;
+
+    const row = document.createElement('div');
+    row.className = 'playlist-item';
+    row.dataset.index = String(i);
+    row.title = item.dir ? `${item.dir}/${item.name}` : item.name;
+    row.style.paddingLeft = `${10 + segs.length * 14}px`;
+
+    const idx = document.createElement('span');
+    idx.className = 'pl-index';
+    idx.textContent = String(i + 1);
+
+    const name = document.createElement('span');
+    name.className = 'pl-name';
+    name.textContent = item.name;
+
+    const playing = document.createElement('span');
+    playing.className = 'pl-playing';
+    playing.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>';
+
+    row.append(idx, name, playing);
+    frag.appendChild(row);
+  });
+  els.playlistItems.innerHTML = '';
+  els.playlistItems.appendChild(frag);
+  const has = state.playlist.length > 0;
+  els.playlistCount.textContent = has ? T('playlist_count', { n: state.playlist.length }) : '';
+  els.playlistEmpty.hidden = has;
+  updatePlaylistActive();
+}
+
+// Collapse / expand a directory subtree in the playlist.
+function toggleDir(fullPath) {
+  if (state.collapsedDirs.has(fullPath)) state.collapsedDirs.delete(fullPath);
+  else state.collapsedDirs.add(fullPath);
+  renderPlaylist();
+}
+
+function updatePlaylistActive() {
+  els.playlistItems.querySelectorAll('.playlist-item').forEach((row) => {
+    const on = Number(row.dataset.index) === state.playlistIndex;
+    row.classList.toggle('active', on);
+    if (on) row.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+async function playPlaylistIndex(i) {
+  if (i < 0 || i >= state.playlist.length) return;
+  state.playlistIndex = i;
+  updatePlaylistActive();
+  await loadVideoFile(state.playlist[i].path);
+}
+
+// auto=true when triggered by the video ending (vs. an explicit Next click).
+function playNext(auto) {
+  const n = state.playlist.length;
+  if (n === 0) return;
+  let next;
+  if (state.shuffle && n > 1) {
+    do { next = Math.floor(Math.random() * n); } while (next === state.playlistIndex);
+  } else {
+    next = state.playlistIndex + 1;
+    if (next >= n) next = 0; // wrap around to the start
+  }
+  playPlaylistIndex(next);
+}
+
+function playPrev() {
+  const n = state.playlist.length;
+  if (n === 0) return;
+  let prev;
+  if (state.shuffle && n > 1) {
+    do { prev = Math.floor(Math.random() * n); } while (prev === state.playlistIndex);
+  } else {
+    prev = state.playlistIndex - 1;
+    if (prev < 0) prev = n - 1;
+  }
+  playPlaylistIndex(prev);
+}
+
+function setShuffle(on) {
+  state.shuffle = on;
+  els.btnPlaylistShuffle.classList.toggle('active', on);
+  els.btnPlaylistShuffle.title = T(on ? 'playlist_shuffle_on' : 'playlist_shuffle');
+}
+
+// Switch the right pane between the 'filters' and 'playlist' tabs.
+function switchPane(name) {
+  const isPlaylist = name === 'playlist';
+  els.filtersTab.hidden = isPlaylist;
+  els.playlistTab.hidden = !isPlaylist;
+  els.tabFilters.classList.toggle('active', !isPlaylist);
+  els.tabPlaylist.classList.toggle('active', isPlaylist);
+}
+
+// ---------- rating ----------
+// Rating suffix encoded in the file name as `_<rating>` right before the
+// extension. Ordered longest-first so the regex is greedy about the S tiers.
+const RATING_RE = /_(SSSSS|SSSS|SSS|SS|S|A|B|C)$/;
+
+function splitFileName(fileName) {
+  const dot = fileName.lastIndexOf('.');
+  const hasExt = dot > 0;
+  return {
+    base: hasExt ? fileName.slice(0, dot) : fileName,
+    ext: hasExt ? fileName.slice(dot) : '',
+  };
+}
+
+// Parse the current rating out of a file name, '' when none is present.
+function parseRating(fileName) {
+  const { base } = splitFileName(fileName);
+  const m = RATING_RE.exec(base);
+  return m ? m[1] : '';
+}
+
+// Reflect the active video's rating into the dropdown (without renaming).
+function syncRatingUI() {
+  if (!state.videoPath) { els.ratingSelect.value = ''; return; }
+  const fileName = state.videoPath.split(/[\\/]/).pop();
+  els.ratingSelect.value = parseRating(fileName);
+}
+
+// User changed the rating → rename the file so its `_<rating>` suffix matches
+// (replacing any previous rating, never appending a second one).
+async function onRatingChange() {
+  if (!state.hasVideo || !state.videoPath) return;
+  const rating = els.ratingSelect.value; // '' = None
+  const oldPath = state.videoPath;
+  const fileName = oldPath.split(/[\\/]/).pop();
+  const { base, ext } = splitFileName(fileName);
+  const newBase = base.replace(RATING_RE, '') + (rating ? `_${rating}` : '');
+  const newName = newBase + ext;
+  if (newName === fileName) return;
+
+  try {
+    const res = await window.api.renameVideo({ oldPath, newName });
+    state.videoPath = res.path;
+    els.stageTitlebar.textContent = res.name;
+    // Keep the playlist entry (path + label) in sync.
+    const item = state.playlist.find((it) => it.path === oldPath);
+    if (item) { item.path = res.path; item.name = res.name; renderPlaylist(); }
+    showToast(T('toast_rating_set', { name: res.name }));
+  } catch (e) {
+    showToast(T('toast_rename_failed', { msg: e.message }), true);
+    syncRatingUI(); // revert the dropdown to the real on-disk rating
+  }
 }
 
 function enableTransport(on) {
@@ -1937,31 +2189,47 @@ function bindDragDrop() {
     state.dragDepth = Math.max(0, state.dragDepth - 1);
     if (state.dragDepth === 0) els.dropOverlay.hidden = true;
   };
-  const onDrop = (e) => {
+  const VIDEO_EXTS = /\.(mp4|m4v|mov|mkv|webm|avi|flv|wmv|mpg|mpeg|ts)$/i;
+  const onDrop = async (e) => {
     e.preventDefault();
     state.dragDepth = 0;
     els.dropOverlay.hidden = true;
     const files = e.dataTransfer?.files;
     if (!files || !files.length) return;
-    // Pick the first file that looks like a supported video.
-    const VIDEO_EXTS = /\.(mp4|m4v|mov|mkv|webm|avi|flv|wmv|mpg|mpeg|ts)$/i;
-    let file = null;
+
+    // Resolve absolute paths for everything dropped.
+    const paths = [];
     for (const f of files) {
-      if (VIDEO_EXTS.test(f.name) || (f.type && f.type.startsWith('video/'))) {
-        file = f;
-        break;
-      }
+      const p = window.api.pathForFile(f);
+      if (p) paths.push(p);
     }
-    if (!file) {
-      showToast(T('toast_not_video'), true);
-      return;
-    }
-    const p = window.api.pathForFile(file);
-    if (!p) {
+    if (!paths.length) {
       showToast(T('toast_drop_path_failed'), true);
       return;
     }
-    loadVideoFile(p);
+
+    // A single dropped item that is a folder → build a playlist from its videos.
+    if (paths.length === 1) {
+      const vids = await window.api.listFolderVideos(paths[0]);
+      if (vids && vids.length) { setPlaylist(vids, 0); return; }
+      if (vids && vids.length === 0) { showToast(T('toast_folder_empty'), true); return; }
+      // vids === null → not a directory; fall through to file handling.
+    }
+
+    // One or more dropped files → playlist of the video files among them.
+    const vidFiles = paths
+      .filter((p) => VIDEO_EXTS.test(p))
+      .map((p) => ({ path: p, name: p.split(/[\\/]/).pop() }));
+    if (!vidFiles.length) {
+      showToast(T('toast_not_video'), true);
+      return;
+    }
+    if (vidFiles.length === 1) {
+      clearPlaylist();
+      loadVideoFile(vidFiles[0].path);
+    } else {
+      setPlaylist(vidFiles, 0);
+    }
   };
   window.addEventListener('dragenter', onEnter);
   window.addEventListener('dragover', onOver);
@@ -2078,7 +2346,30 @@ function init() {
 
   // Top buttons
   els.btnPick.addEventListener('click', pickVideo);
+  els.btnPickFolder.addEventListener('click', pickFolder);
+  els.btnPlaylist.addEventListener('click', () => switchPane('playlist'));
+  els.ratingSelect.addEventListener('change', onRatingChange);
   els.btnExtract.addEventListener('click', extractFrames);
+
+  // Right pane tab switching
+  els.tabFilters.addEventListener('click', () => switchPane('filters'));
+  els.tabPlaylist.addEventListener('click', () => switchPane('playlist'));
+
+  // Playlist controls
+  els.btnPlaylistShuffle.addEventListener('click', () => setShuffle(!state.shuffle));
+  els.btnPlaylistPrev.addEventListener('click', () => playPrev());
+  els.btnPlaylistNext.addEventListener('click', () => playNext(false));
+  els.playlistItems.addEventListener('click', (e) => {
+    const dir = e.target.closest('.playlist-dir');
+    if (dir && els.playlistItems.contains(dir)) {
+      toggleDir(dir.dataset.dir);
+      return;
+    }
+    const row = e.target.closest('.playlist-item');
+    if (!row || !els.playlistItems.contains(row)) return;
+    const i = Number(row.dataset.index);
+    if (!Number.isNaN(i)) playPlaylistIndex(i);
+  });
   if (els.btnExtractAudio) els.btnExtractAudio.addEventListener('click', extractAudio);
   els.btnHelp.addEventListener('click', () => toggleHelp());
   els.btnManual.addEventListener('click', () => {
@@ -2264,7 +2555,10 @@ function init() {
     if (state.loopEnabled && state.loopA != null) {
       els.videoEl.currentTime = Math.min(state.loopA, state.loopB || 0);
       els.videoEl.play().catch(() => {});
+      return;
     }
+    // Auto-advance to the next item in the playlist (sequential or random).
+    if (state.playlist.length > 1) playNext(true);
   });
   v.addEventListener('error', () => {
     if (v.error) {

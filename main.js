@@ -17,6 +17,9 @@ const sessions = new Map();
 let currentVideoPath = null; // path the renderer is allowed to stream
 const activeFfmpegProcs = new Set(); // track running ffmpeg children for cleanup
 
+// Supported video extensions — shared by the file dialog and folder scanning.
+const VIDEO_EXTS = ['.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi', '.flv', '.wmv', '.mpg', '.mpeg', '.ts'];
+
 // Window icon. The packaged exe gets its icon from build.win.icon (the .ico);
 // this PNG is what the running window, taskbar and alt-tab use, and it also
 // makes the icon visible during `npm start`. Regenerate both with `npm run icon`.
@@ -203,8 +206,91 @@ ipcMain.handle('dialog:openVideo', async (_evt, opts = {}) => {
   return currentVideoPath;
 });
 
-ipcMain.handle('video:setActive', async (_evt, filePath) => {
-  if (typeof filePath !== 'string' || !filePath) return false;
+// Pick a folder; the renderer then calls folder:listVideos to enumerate it.
+ipcMain.handle('dialog:openFolder', async (_evt, opts = {}) => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: opts.dialogTitle || 'Select a folder',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+// Recursively collect video files under a directory. Guarded against runaway
+// trees (depth cap) and symlink loops (skips symlinked dirs). Mutates `out`.
+// Each pushed item carries `dir`: its subfolder path relative to the opened
+// root (posix-style, '' for files sitting directly in the root).
+async function collectVideosRecursive(dir, rootDir, out, depth) {
+  if (depth > 12) return; // sanity cap on nesting
+  let entries;
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      await collectVideosRecursive(full, rootDir, out, depth + 1); // symlinked dirs report isDirectory() false, so loops are avoided
+    } else if (e.isFile() && VIDEO_EXTS.includes(path.extname(e.name).toLowerCase())) {
+      const rel = path.relative(rootDir, dir).split(path.sep).join('/');
+      out.push({ path: full, name: e.name, dir: rel });
+    }
+  }
+}
+
+// Enumerate video files under a folder, recursing into subdirectories. Returns
+// null if the path is not a directory (so a dropped file falls through to the
+// single-file path), otherwise an array of { path, name, dir } grouped by
+// subfolder so the renderer can show the directory hierarchy.
+ipcMain.handle('folder:listVideos', async (_evt, dirPath) => {
+  if (typeof dirPath !== 'string' || !dirPath) return null;
+  let stat;
+  try {
+    stat = await fsp.stat(dirPath);
+  } catch {
+    return null;
+  }
+  if (!stat.isDirectory()) return null;
+  const out = [];
+  await collectVideosRecursive(dirPath, dirPath, out, 0);
+  // Group by subfolder first (root '' sorts first), then natural-sort by name,
+  // so every directory's files stay contiguous in the list.
+  return out.sort((a, b) => {
+    const d = a.dir.localeCompare(b.dir, undefined, { numeric: true, sensitivity: 'base' });
+    if (d !== 0) return d;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+});
+
+// Rename the active video file within its own folder (used by the rating
+// feature). Only the currently streaming file may be renamed, and the new name
+// must be a bare filename (no path separators / traversal). On success the
+// vfs:// trust anchor is repointed to the new path so playback keeps working.
+ipcMain.handle('video:rename', async (_evt, { oldPath, newName }) => {
+  if (!oldPath || oldPath !== currentVideoPath) {
+    throw new Error('rename: not the active video');
+  }
+  if (typeof newName !== 'string' || !newName ||
+      newName.includes('/') || newName.includes('\\') || newName.includes('..')) {
+    throw new Error('rename: invalid target name');
+  }
+  const dir = path.dirname(oldPath);
+  const newPath = path.join(dir, newName);
+  if (newPath === oldPath) {
+    return { path: oldPath, name: path.basename(oldPath) };
+  }
+  // Refuse to clobber a different existing file.
+  let exists = false;
+  try { await fsp.access(newPath); exists = true; } catch {}
+  if (exists) throw new Error('A file with that name already exists');
+
+  await fsp.rename(oldPath, newPath);
+  currentVideoPath = newPath;
+  return { path: newPath, name: path.basename(newPath) };
+});
+
+ipcMain.handle('video:setActive', async (_evt, filePath) => {  if (typeof filePath !== 'string' || !filePath) return false;
   try {
     const resolved = await fsp.realpath(filePath);
     await fsp.access(resolved, fs.constants.R_OK);
