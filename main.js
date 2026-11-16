@@ -6,11 +6,21 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const ffmpegPath = require('ffmpeg-static');
+// In a packaged app the bundled binaries are extracted to `app.asar.unpacked`
+// (see build.asarUnpack), but the npm modules still report their path inside
+// `app.asar`. spawn()/exec can't run a file inside the asar virtual archive,
+// so rewrite the path when packaged. Harmless in dev (isPackaged === false).
+function resolveBinary(p) {
+  if (!p) return p;
+  return app.isPackaged ? p.replace('app.asar', 'app.asar.unpacked') : p;
+}
+
+const ffmpegPath = resolveBinary(require('ffmpeg-static'));
 const ffprobeStatic = require('ffprobe-static');
+const ffprobePath = resolveBinary(ffprobeStatic.path);
 const ffmpeg = require('fluent-ffmpeg');
 ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobeStatic.path);
+ffmpeg.setFfprobePath(ffprobePath);
 
 let mainWindow = null;
 const sessions = new Map();
